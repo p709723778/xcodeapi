@@ -207,7 +207,7 @@ namespace UnityEditor.iOS.Xcode
 
         // The extension of the files identified by path and projectPath must be the same
         // FIXME: check if PBXSourceTree.Group is the best option. Maybe we can parse the path a bit.
-        public string AddFile(string path, string projectPath)
+        string AddFile(string path, string projectPath)
         {
             return AddFileImpl(path, projectPath, PBXSourceTree.Group);
         }
