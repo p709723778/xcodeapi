@@ -3,7 +3,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProductVersion>12.0.0</ProductVersion>
+    <ProductVersion>8.0.30703</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{2301D70B-617E-49AB-97B4-0BF15CF8E167}</ProjectGuid>
     <OutputType>Library</OutputType>
@@ -38,11 +38,5 @@
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ItemGroup>
     <Folder Include="Properties\" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\..\Projects\CSharp\UnityEngine.csproj">
-      <Project>{F0499708-3EB6-4026-8362-97E6FFC4E7C8}</Project>
-      <Name>UnityEngine</Name>
-    </ProjectReference>
   </ItemGroup>
 </Project>
