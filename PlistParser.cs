@@ -237,6 +237,16 @@ namespace UnityEditor.iOS.Xcode
             }
         }
 
+        public void ReadFromFile(string path)
+        {
+            ReadFromString(File.ReadAllText(path));
+        }
+
+        public void ReadFromStream(TextReader tr)
+        {
+            ReadFromString(tr.ReadToEnd());
+        }
+
         public void ReadFromString(string text)
         {
             XDocument doc = ParseXmlNoDtd(text);
@@ -297,6 +307,16 @@ namespace UnityEditor.iOS.Xcode
                 return arrayXml;
             }
             return null;
+        }
+
+        public void WriteToFile(string path)
+        {
+            File.WriteAllText(path, WriteToString());
+        }
+
+        public void WriteToStream(TextWriter tw)
+        {
+            tw.Write(WriteToString());
         }
 
         public string WriteToString()

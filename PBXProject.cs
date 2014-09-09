@@ -57,10 +57,19 @@ namespace UnityEditor.iOS.Xcode
             "PBXVariantGroup", "XCBuildConfiguration", "XCConfigurationList"
         };
 
+        public void ReadFromFile(string path)
+        {
+            ReadFromString(File.ReadAllText(path));
+        }
+
         public void ReadFromString(string src)
         {
             TextReader sr = new StringReader(src);
+            ReadFromStream(sr);
+        }
 
+        public void ReadFromStream(TextReader sr)
+        {
             PBXStream.ReadLinesWithConditionForLastLine(sr, m_Header, s => s.Trim() == "objects = {");
 
             string line = PBXStream.ReadSkippingEmptyLines(sr);
@@ -99,10 +108,20 @@ namespace UnityEditor.iOS.Xcode
             PBXStream.ReadLinesFromFile(sr, m_Footer);
         }
 
+        public void WriteToFile(string path)
+        {
+            File.WriteAllText(path, WriteToString());
+        }
+
         public string WriteToString()
         {
             TextWriter sw = new StringWriter();
+            WriteToStream(sw);
+            return sw.ToString();
+        }
 
+        public void WriteToStream(TextWriter sw)
+        {
             var commentMap = BuildCommentMap();
 
             foreach (string s in m_Header)
@@ -114,8 +133,6 @@ namespace UnityEditor.iOS.Xcode
 
             foreach (string s in m_Footer)
                 sw.WriteLine(s);
-
-            return sw.ToString();
         }
 
         PBXBuildFileSection             buildFiles          { get { return m_Section["PBXBuildFile"] as PBXBuildFileSection; } }
@@ -134,6 +151,21 @@ namespace UnityEditor.iOS.Xcode
         XCBuildConfigurationSection     buildConfigs        { get { return m_Section["XCBuildConfiguration"] as XCBuildConfigurationSection; } }
         XCConfigurationListSection      configs             { get { return m_Section["XCConfigurationList"] as XCConfigurationListSection; } }
         PBXProjectSection               project             { get { return m_Section["PBXProject"] as PBXProjectSection; } }
+
+        public static string GetPBXProjectPath(string buildPath)
+        {
+            return Path.Combine(buildPath, "Unity-iPhone.xcodeproj/project.pbxproj");
+        }
+
+        public static string GetUnityTargetName()
+        {
+            return "Unity-iPhone";
+        }
+
+        public static string GetUnityTestTargetName()
+        {
+            return "Unity-iPhone Tests";
+        }
 
         /// Returns a guid identifying native target with name @a name
         public string TargetGuidByName(string name)
@@ -206,10 +238,10 @@ namespace UnityEditor.iOS.Xcode
         }
 
         // The extension of the files identified by path and projectPath must be the same
-        // FIXME: check if PBXSourceTree.Group is the best option. Maybe we can parse the path a bit.
+        // FIXME: check if PBXSourceTree.Source is the best option. Maybe we can parse the path a bit.
         string AddFile(string path, string projectPath)
         {
-            return AddFileImpl(path, projectPath, PBXSourceTree.Group);
+            return AddFileImpl(path, projectPath, PBXSourceTree.Source);
         }
 
         public string AddFile(string path, string projectPath, PBXSourceTree sourceTree)
@@ -266,7 +298,7 @@ namespace UnityEditor.iOS.Xcode
             return FindFileGuidByProjectPath(path) != null;
         }
 
-        public bool HasFramework(string framework)
+        bool HasFramework(string framework)
         {
             return ContainsFileByRealPath("System/Library/Frameworks/" + framework);
         }
