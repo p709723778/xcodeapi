@@ -75,7 +75,7 @@ namespace UnityEditor.iOS.Xcode
 
     class PBXRegex
     {
-        public static string GuidRegexString = "[A-F0-9]{24}";
+        public static string GuidRegexString = "[A-Fa-f0-9]{24}";
         const string k_CommentRegexString = "/\\*\\s+([^\\*]+)\\s+\\*/";
 
         public static Regex BeginSection    = new Regex("^/\\* Begin (\\w+) section \\*/$");
