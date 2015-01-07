@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Text.RegularExpressions;
+using System.IO;
 
 namespace UnityEditor.iOS.Xcode
 {
-    class CommentedGUID
+
+    internal class CommentedGUID
     {
         public static string ReadString(string line)
         {
@@ -22,14 +23,13 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class GUIDToCommentMap
+    internal class GUIDToCommentMap
     {
-        readonly Dictionary<string, string> m_Dict = new Dictionary<string, string>();
+        private Dictionary<string, string> m_Dict = new Dictionary<string, string>();
 
         public string this[string guid]
         {
-            get
-            {
+            get {
                 if (m_Dict.ContainsKey(guid))
                     return m_Dict[guid];
                 return null;
@@ -49,40 +49,40 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXGUID
+    internal class PBXGUID
     {
-        public delegate string GuidGenerator();
+        internal delegate string GuidGenerator();
 
         // We allow changing Guid generator to make testing of PBXProject possible
-        static GuidGenerator s_GUIDGenerator = DefaultGuidGenerator;
+        private static GuidGenerator guidGenerator = DefaultGuidGenerator;
 
-        public static string DefaultGuidGenerator()
+        internal static string DefaultGuidGenerator()
         {
             return Guid.NewGuid().ToString("N").Substring(8).ToUpper();
         }
 
-        public static void SetGuidGenerator(GuidGenerator generator)
+        internal static void SetGuidGenerator(GuidGenerator generator)
         {
-            s_GUIDGenerator = generator;
+            guidGenerator = generator;
         }
 
         // Generates a GUID.
         public static string Generate()
         {
-            return s_GUIDGenerator();
+            return guidGenerator();
         }
     }
 
-    class PBXRegex
+    internal class PBXRegex
     {
         public static string GuidRegexString = "[A-Fa-f0-9]{24}";
-        const string k_CommentRegexString = "/\\*\\s+([^\\*]+)\\s+\\*/";
+        private static string CommentRegexString = "/\\*\\s+([^\\*]+)\\s+\\*/";
 
         public static Regex BeginSection    = new Regex("^/\\* Begin (\\w+) section \\*/$");
         public static Regex EndSection      = new Regex("^/\\* End (\\w+) section \\*/$");
 
         public static Regex GUID            = new Regex(String.Format("({0})", GuidRegexString));
-        public static Regex GUIDComment     = new Regex(String.Format("({0}) {1}", GuidRegexString, k_CommentRegexString));
+        public static Regex GUIDComment     = new Regex(String.Format("({0}) {1}", GuidRegexString, CommentRegexString));
         public static Regex Key             = new Regex("(\\w+) = ");
         public static Regex KeyValue        = new Regex("(\\S+) = ([^;]+);$");
         public static Regex AnyKeyValue     = new Regex("([^=]+) = (.*);$");
@@ -100,7 +100,7 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXStream
+    internal class PBXStream
     {
         public static string ReadSkippingEmptyLines(TextReader sr)
         {
@@ -125,12 +125,8 @@ namespace UnityEditor.iOS.Xcode
         {
             if (!src.StartsWith("\"") || !src.EndsWith("\""))
                 return src;
-            return src
-                   .Substring(1, src.Length - 2)
-                   .Replace("\\\\", "\u569f")
-                   .Replace("\\\"", "\"")
-                   .Replace("\\n", "\n")
-                   .Replace("\u569f", "\\"); // U+569f is a rarely used Chinese character
+            return src.Substring(1, src.Length - 2).Replace("\\\\", "\u569f").Replace("\\\"", "\"")
+                                                   .Replace("\\n", "\n").Replace("\u569f", "\\"); // U+569f is a rarely used Chinese character
         }
 
         public delegate bool    ConditionOnString(string s);
@@ -143,9 +139,8 @@ namespace UnityEditor.iOS.Xcode
                 line = sr.ReadLine();
                 list.Add(line);
             }
-            while (!cond(line));
+            while(!cond(line));
         }
-
         public static string ReadLinesUntilConditionIsMet(TextReader sr, List<string> list, ProcessString proc, ConditionOnString cond)
         {
             string line = sr.ReadLine();
@@ -164,7 +159,7 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    enum PBXFileType
+    internal enum PBXFileType
     {
         NotBuildable,
         Framework,
@@ -183,13 +178,13 @@ namespace UnityEditor.iOS.Xcode
         Source
     };
 
-    class FileTypeUtils
+    internal class FileTypeUtils
     {
-        class FileTypeDesc
+        internal class FileTypeDesc
         {
             public FileTypeDesc(string typeName, PBXFileType type)
             {
-                name = typeName;
+                this.name = typeName;
                 this.type = type;
             }
 
@@ -197,66 +192,67 @@ namespace UnityEditor.iOS.Xcode
             public PBXFileType type;
         }
 
-        static readonly Dictionary<string, FileTypeDesc> k_Types =
+        private static readonly Dictionary<string, FileTypeDesc> types =
             new Dictionary<string, FileTypeDesc>
         {
-            { ".a",          new FileTypeDesc("archive.ar",            PBXFileType.Framework) },
-            { ".app",        new FileTypeDesc("wrapper.application",   PBXFileType.NotBuildable) },
-            { ".appex",      new FileTypeDesc("wrapper.app-extension", PBXFileType.CopyFile) },
-            { ".s",          new FileTypeDesc("sourcecode.asm",        PBXFileType.Source) },
-            { ".c",          new FileTypeDesc("sourcecode.c.c",        PBXFileType.Source) },
-            { ".cc",         new FileTypeDesc("sourcecode.cpp.cpp",    PBXFileType.Source) },
-            { ".cpp",        new FileTypeDesc("sourcecode.cpp.cpp",    PBXFileType.Source) },
-            { ".swift",      new FileTypeDesc("sourcecode.swift",      PBXFileType.Source) },
-            { ".dll",        new FileTypeDesc("file",                  PBXFileType.NotBuildable) },
-            { ".framework",  new FileTypeDesc("wrapper.framework",     PBXFileType.Framework) },
-            { ".h",          new FileTypeDesc("sourcecode.c.h",        PBXFileType.NotBuildable) },
-            { ".pch",        new FileTypeDesc("sourcecode.c.h",        PBXFileType.NotBuildable) },
-            { ".icns",       new FileTypeDesc("image.icns",            PBXFileType.Resource) },
-            { ".inc",        new FileTypeDesc("sourcecode.inc",        PBXFileType.NotBuildable) },
-            { ".m",          new FileTypeDesc("sourcecode.c.objc",     PBXFileType.Source) },
-            { ".mm",         new FileTypeDesc("sourcecode.cpp.objcpp", PBXFileType.Source) },
-            { ".nib",        new FileTypeDesc("wrapper.nib",           PBXFileType.Resource) },
-            { ".plist",      new FileTypeDesc("text.plist.xml",        PBXFileType.Resource) },
-            { ".png",        new FileTypeDesc("image.png",             PBXFileType.Resource) },
-            { ".rtf",        new FileTypeDesc("text.rtf",              PBXFileType.Resource) },
-            { ".tiff",       new FileTypeDesc("image.tiff",            PBXFileType.Resource) },
-            { ".txt",        new FileTypeDesc("text",                  PBXFileType.Resource) },
-            { ".xcodeproj",  new FileTypeDesc("wrapper.pb-project",    PBXFileType.NotBuildable) },
-            { ".xib",        new FileTypeDesc("file.xib",              PBXFileType.Resource) },
-            { ".strings",    new FileTypeDesc("text.plist.strings",    PBXFileType.Resource) },
-            { ".storyboard", new FileTypeDesc("file.storyboard",       PBXFileType.Resource) },
-            { ".bundle",     new FileTypeDesc("wrapper.plug-in",       PBXFileType.Resource) },
-            { ".dylib",      new FileTypeDesc("compiled.mach-o.dylib", PBXFileType.Framework) }
+            { ".a",         new FileTypeDesc("archive.ar",              PBXFileType.Framework) },
+            { ".app",       new FileTypeDesc("wrapper.application",     PBXFileType.NotBuildable) },
+            { ".appex",     new FileTypeDesc("wrapper.app-extension",   PBXFileType.CopyFile) },
+            { ".s",         new FileTypeDesc("sourcecode.asm",          PBXFileType.Source) },
+            { ".c",         new FileTypeDesc("sourcecode.c.c",          PBXFileType.Source) },
+            { ".cc",        new FileTypeDesc("sourcecode.cpp.cpp",      PBXFileType.Source) },
+            { ".cpp",       new FileTypeDesc("sourcecode.cpp.cpp",      PBXFileType.Source) },
+            { ".swift",     new FileTypeDesc("sourcecode.swift",        PBXFileType.Source) },
+            { ".dll",       new FileTypeDesc("file",                    PBXFileType.NotBuildable) },
+            { ".framework", new FileTypeDesc("wrapper.framework",       PBXFileType.Framework) },
+            { ".h",         new FileTypeDesc("sourcecode.c.h",          PBXFileType.NotBuildable) },
+            { ".pch",       new FileTypeDesc("sourcecode.c.h",          PBXFileType.NotBuildable) },
+            { ".icns",      new FileTypeDesc("image.icns",              PBXFileType.Resource) },
+            { ".inc",       new FileTypeDesc("sourcecode.inc",          PBXFileType.NotBuildable) },
+            { ".m",         new FileTypeDesc("sourcecode.c.objc",       PBXFileType.Source) },
+            { ".mm",        new FileTypeDesc("sourcecode.cpp.objcpp",   PBXFileType.Source ) },
+            { ".nib",       new FileTypeDesc("wrapper.nib",             PBXFileType.Resource) },
+            { ".plist",     new FileTypeDesc("text.plist.xml",          PBXFileType.Resource) },
+            { ".png",       new FileTypeDesc("image.png",               PBXFileType.Resource) },
+            { ".rtf",       new FileTypeDesc("text.rtf",                PBXFileType.Resource) },
+            { ".tiff",      new FileTypeDesc("image.tiff",              PBXFileType.Resource) },
+            { ".txt",       new FileTypeDesc("text",                    PBXFileType.Resource) },
+            { ".json",      new FileTypeDesc("text.json",               PBXFileType.Resource) },
+            { ".xcodeproj", new FileTypeDesc("wrapper.pb-project",      PBXFileType.NotBuildable) },
+            { ".xib",       new FileTypeDesc("file.xib",                PBXFileType.Resource) },
+            { ".strings",   new FileTypeDesc("text.plist.strings",      PBXFileType.Resource) },
+            { ".storyboard",new FileTypeDesc("file.storyboard",         PBXFileType.Resource) },
+            { ".bundle",    new FileTypeDesc("wrapper.plug-in",         PBXFileType.Resource) },
+            { ".dylib",     new FileTypeDesc("compiled.mach-o.dylib",   PBXFileType.Framework) }
         };
 
         public static bool IsKnownExtension(string ext)
         {
-            return k_Types.ContainsKey(ext);
+            return types.ContainsKey(ext);
         }
 
         public static PBXFileType GetFileType(string ext)
         {
-            if (k_Types.ContainsKey(ext))
-                return k_Types[ext].type;
+            if (types.ContainsKey(ext))
+                return types[ext].type;
             return PBXFileType.NotBuildable;
         }
 
         public static string GetTypeName(string ext)
         {
-            if (k_Types.ContainsKey(ext))
-                return k_Types[ext].name;
+            if (types.ContainsKey(ext))
+                return types[ext].name;
             return "text";
         }
 
         public static bool IsBuildable(string ext)
         {
-            if (k_Types.ContainsKey(ext) && k_Types[ext].type != PBXFileType.NotBuildable)
+            if (types.ContainsKey(ext) && types[ext].type != PBXFileType.NotBuildable)
                 return true;
             return false;
         }
 
-        static readonly Dictionary<PBXSourceTree, string> k_SourceTree = new Dictionary<PBXSourceTree, string>
+        private static readonly Dictionary<PBXSourceTree, string> sourceTree = new Dictionary<PBXSourceTree, string> 
         {
             { PBXSourceTree.Absolute,   "<absolute>" },
             { PBXSourceTree.Group,      "<group>" },
@@ -266,9 +262,16 @@ namespace UnityEditor.iOS.Xcode
             { PBXSourceTree.Source,     "SOURCE_ROOT" },
         };
 
-        public static string SourceTreeDesc(PBXSourceTree tree)
+        internal static string SourceTreeDesc(PBXSourceTree tree)
         {
-            return k_SourceTree[tree];
+            return sourceTree[tree];
+        }
+
+        internal static List<PBXSourceTree> AllSourceTrees()
+        {
+            return new List<PBXSourceTree>{PBXSourceTree.Absolute, PBXSourceTree.Group, PBXSourceTree.Build,
+                                           PBXSourceTree.Developer, PBXSourceTree.Sdk, PBXSourceTree.Source};
         }
     }
+
 } // UnityEditor.iOS.Xcode

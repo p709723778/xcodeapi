@@ -1,14 +1,16 @@
-using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
+using System;
+
 
 namespace UnityEditor.iOS.Xcode
 {
+
     using KnownProperties = SortedDictionary<string, PropertyType>;
 
-    abstract class PBXObjectBase
+    internal abstract class PBXObjectBase
     {
         public string guid;
 
@@ -18,11 +20,11 @@ namespace UnityEditor.iOS.Xcode
             ReadFromSectionImpl(curLine, sr);
         }
 
-        public      abstract void WriteToSection(TextWriter sw, GUIDToCommentMap comments);
-        protected   abstract void ReadFromSectionImpl(string curLine, TextReader srs);
+        public abstract void WriteToSection(TextWriter sw, GUIDToCommentMap comments);
+        protected abstract void ReadFromSectionImpl(string curLine, TextReader srs);
     }
 
-    class PBXBuildFile : PBXObjectBase
+    internal class PBXBuildFile : PBXObjectBase
     {
         public string postfix;
         public string fileRef;
@@ -33,29 +35,27 @@ namespace UnityEditor.iOS.Xcode
             fileRef = m.Groups[2].Value;
             postfix = m.Groups[3].Value;
         }
-
         public override void WriteToSection(TextWriter sw, GUIDToCommentMap comments)
         {
-            sw.WriteLine(
-                "\t\t{0} = {{isa = PBXBuildFile; fileRef = {1}; {2}}};",
-                CommentedGUID.Write(guid, comments),
-                CommentedGUID.Write(fileRef, comments),
-                postfix);
+            sw.WriteLine(String.Format("\t\t{0} = {{isa = PBXBuildFile; fileRef = {1}; {2}}};",
+                         CommentedGUID.Write(guid, comments),
+                         CommentedGUID.Write(fileRef, comments),
+                         postfix));
         }
 
         public static PBXBuildFile CreateFromFile(string fileRefGUID, bool weak,
                                                   string compileFlags)
         {
-            var buildFile = new PBXBuildFile();
+            PBXBuildFile buildFile = new PBXBuildFile();
             buildFile.guid = PBXGUID.Generate();
             buildFile.fileRef = fileRefGUID;
             buildFile.postfix = "";
-            if (weak || !string.IsNullOrEmpty(compileFlags))
+            if (weak || (compileFlags != null && compileFlags != ""))
             {
                 string data = "";
                 if (weak)
                     data += "ATTRIBUTES = (Weak, ); ";
-                if (!string.IsNullOrEmpty(compileFlags))
+                if (compileFlags != null && compileFlags != "")
                     data += "COMPILER_FLAGS = \"" + compileFlags.Replace("\"", "\\\"") + "\"; ";
                 buildFile.postfix = "settings = {" + data + "}; ";
             }
@@ -64,11 +64,12 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXFileReference : PBXObjectBase
+    internal class PBXFileReference : PBXObjectBase
     {
         public string text;
         public string path;
         public string name;
+        public PBXSourceTree tree;
 
         protected override void ReadFromSectionImpl(string curLine, TextReader sr)
         {
@@ -80,10 +81,9 @@ namespace UnityEditor.iOS.Xcode
             if (PBXRegex.FileRefName.IsMatch(curLine))
                 name = PBXStream.UnquoteString(PBXRegex.FileRefName.Match(curLine).Groups[1].Value);
         }
-
         public override void WriteToSection(TextWriter sw, GUIDToCommentMap comments)
         {
-            sw.WriteLine("\t\t{0} = {1};", CommentedGUID.Write(guid, comments), text);
+            sw.WriteLine(String.Format("\t\t{0} = {1};", CommentedGUID.Write(guid, comments), text));
         }
 
         public static PBXFileReference CreateFromFile(string path, string projectFileName,
@@ -91,21 +91,22 @@ namespace UnityEditor.iOS.Xcode
         {
             string guid = PBXGUID.Generate();
 
-            var fileRef = new PBXFileReference();
+            PBXFileReference fileRef = new PBXFileReference();
             fileRef.guid = guid;
 
-            fileRef.path    = path;
-            fileRef.name    = projectFileName;
-            fileRef.text    = String.Format("{{isa = PBXFileReference; lastKnownFileType = {0}; name = {1}; path = {2}; sourceTree = {3}; }}",
-                                            FileTypeUtils.GetTypeName(Path.GetExtension(fileRef.name)),
-                                            PBXStream.QuoteStringIfNeeded(fileRef.name),
-                                            PBXStream.QuoteStringIfNeeded(fileRef.path),
-                                            PBXStream.QuoteStringIfNeeded(FileTypeUtils.SourceTreeDesc(tree)));
+            fileRef.path = path;
+            fileRef.name = projectFileName;
+            fileRef.tree = tree;
+            fileRef.text = String.Format("{{isa = PBXFileReference; lastKnownFileType = {0}; name = {1}; path = {2}; sourceTree = {3}; }}",
+                                         FileTypeUtils.GetTypeName(Path.GetExtension(fileRef.name)),
+                                         PBXStream.QuoteStringIfNeeded(fileRef.name),
+                                         PBXStream.QuoteStringIfNeeded(fileRef.path),
+                                         PBXStream.QuoteStringIfNeeded(FileTypeUtils.SourceTreeDesc(tree)));
             return fileRef;
         }
     }
 
-    enum PropertyType
+    internal enum PropertyType
     {
         Regular,
         RegularList,
@@ -117,14 +118,14 @@ namespace UnityEditor.iOS.Xcode
         None
     }
 
-    abstract class PBXObject : PBXObjectBase
+    internal abstract class PBXObject : PBXObjectBase
     {
         protected List<string> m_BadLines = new List<string>();
         protected abstract KnownProperties knownProperties { get; }
 
         protected Dictionary<string, string> m_Properties = new Dictionary<string, string>();
 
-        PropertyType GetPropertyTypeForLine(string line)
+        private PropertyType GetPropertyTypeForLine(string line)
         {
             string trimmed = line.Trim();
             Match m = PBXRegex.Key.Match(trimmed);
@@ -171,7 +172,7 @@ namespace UnityEditor.iOS.Xcode
                 if (propType == PropertyType.None)
                     m_BadLines.Add(curLine);
                 else
-                    curLine = ReadProperty(propType, curLine, sr); // TODO: static analysis: "Value assigned is not used in any execution path"
+                    curLine = ReadProperty(propType, curLine, sr);
                 curLine = sr.ReadLine();
             }
         }
@@ -194,7 +195,7 @@ namespace UnityEditor.iOS.Xcode
                 WriteCommentedGuidProperty(prop, sw, comments);
         }
 
-        void WritePropertyWrapper(string prop, HashSet<string> processed, TextWriter sw, GUIDToCommentMap comments)
+        private void WritePropertyWrapper(string prop, HashSet<string> processed, TextWriter sw, GUIDToCommentMap comments)
         {
             if (processed.Contains(prop))
                 return;
@@ -218,7 +219,7 @@ namespace UnityEditor.iOS.Xcode
             allProps.AddRange(GetPropertyNames());
             allProps.Sort();
 
-            sw.WriteLine("\t\t{0} = {{", CommentedGUID.Write(guid, comments));
+            sw.WriteLine(String.Format("\t\t{0} = {{", CommentedGUID.Write(guid, comments)));
             WritePropertyWrapper("isa", processedProperties, sw, comments); // always the first
             foreach (var prop in allProps)
                 WritePropertyWrapper(prop, processedProperties, sw, comments);
@@ -228,21 +229,21 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    abstract class GUIDListBase : PBXObject
+    internal abstract class GUIDListBase : PBXObject
     {
         protected abstract string mainListName { get; }
 
         protected List<string> mainList { get { return m_ListProperties[mainListName]; } }
         protected Dictionary<string, List<string>> m_ListProperties = new Dictionary<string, List<string>>();
 
-        public void AddGUID(string aGuid)
+        public void AddGUID(string guid)
         {
-            mainList.Add(aGuid);
+            mainList.Add(guid);
         }
 
-        public void RemoveGUID(string aGuid)
+        public void RemoveGUID(string guid)
         {
-            mainList.RemoveAll(x => x == aGuid);
+            mainList.RemoveAll(x => x == guid);
         }
 
         protected string ReadRegularListProperty(string curLine, TextReader sr)
@@ -292,7 +293,7 @@ namespace UnityEditor.iOS.Xcode
         protected void WriteRegularListProperty(string prop, TextWriter sw)
         {
             sw.WriteLine("\t\t\t{0} = (", prop);
-            var list = m_ListProperties[prop];
+            List<string> list = m_ListProperties[prop];
             foreach (string v in list)
                 sw.WriteLine("\t\t\t\t{0},", v);
             sw.WriteLine("\t\t\t);");
@@ -300,8 +301,30 @@ namespace UnityEditor.iOS.Xcode
 
         protected void WriteCommentedGuidListProperty(string prop, TextWriter sw, GUIDToCommentMap comments)
         {
+            List<string> list = m_ListProperties[prop];
+
+            bool sortCommentedGuidLists = false;
+            if (sortCommentedGuidLists)
+            {
+                // useful in large projects as Xcode does not sort directory contents by default
+                var sorted = new List<KeyValuePair<string, string>>();
+                foreach (string v in list)
+                    sorted.Add(new KeyValuePair<string, string>(comments[v], v));
+
+                sorted.Sort((a, b) =>
+                {
+                    if (a.Key != null && b.Key != null)
+                        return String.Compare(a.Key, b.Key, false);
+                    else
+                        return 0;
+                });
+
+                list.Clear();
+                foreach (var kv in sorted)
+                    list.Add(kv.Value);
+            }
+
             sw.WriteLine("\t\t\t{0} = (", prop);
-            var list = m_ListProperties[prop];
             foreach (string v in list)
                 sw.WriteLine("\t\t\t\t{0},", CommentedGUID.Write(v, comments));
             sw.WriteLine("\t\t\t);");
@@ -325,19 +348,19 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class XCConfigurationList : GUIDListBase
+    internal class XCConfigurationList : GUIDListBase
     {
         protected override string mainListName { get { return "buildConfigurations"; } }
 
         public List<string> buildConfig { get { return mainList; } }
 
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "buildConfigurations", PropertyType.CommentedGuidList },
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
 
         public static XCConfigurationList Create()
         {
@@ -352,13 +375,13 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXGroup : GUIDListBase
+    internal class PBXGroup : GUIDListBase
     {
         protected override string mainListName { get { return "children"; } }
 
         public List<string> children { get { return mainList; } }
 
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "name", PropertyType.Regular },
@@ -367,20 +390,18 @@ namespace UnityEditor.iOS.Xcode
             { "sourceTree", PropertyType.Regular },
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
 
         public string name
         {
-            get
-            {
+            get {
                 if (m_Properties.ContainsKey("path"))
                     return m_Properties["path"];
                 if (m_Properties.ContainsKey("name"))
                     return m_Properties["name"];
                 return null;
             }
-            set
-            {
+            set {
                 if (m_Properties.ContainsKey("path"))
                     m_Properties["path"] = value;
                 m_Properties["name"] = value;
@@ -389,7 +410,7 @@ namespace UnityEditor.iOS.Xcode
 
         public static PBXGroup Create(string name)
         {
-            var gr = new PBXGroup();
+            PBXGroup gr = new PBXGroup();
             gr.guid = PBXGUID.Generate();
 
             gr.m_Properties["isa"] = "PBXGroup";
@@ -401,26 +422,22 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXVariantGroup : PBXGroup
+    internal class PBXVariantGroup : PBXGroup
     {
     }
 
-    class PBXNativeTarget : GUIDListBase
+    internal class PBXNativeTarget : GUIDListBase
     {
         protected override string mainListName { get { return "buildPhases"; } }
 
         public List<string> phase { get { return mainList; } }
 
-        public string buildConfigList
-        {
-            get { return m_Properties["buildConfigurationList"]; }
-            set { m_Properties["buildConfigurationList"] = value; } // guid
-        }
-
+        public string buildConfigList { get { return m_Properties["buildConfigurationList"]; }
+                                        set { m_Properties["buildConfigurationList"] = value; } } // guid
         public string name { get { return m_Properties["name"]; } }
         public List<string> dependencies { get { return m_ListProperties["dependencies"]; } }
 
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "buildPhases", PropertyType.CommentedGuidList },
@@ -433,7 +450,7 @@ namespace UnityEditor.iOS.Xcode
             { "buildConfigurationList", PropertyType.CommentedGuid },
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
 
         public static PBXNativeTarget Create(string name, string productRef, string productType, string buildConfigList)
         {
@@ -452,13 +469,14 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class FileGUIDListBase : GUIDListBase
+
+    internal class FileGUIDListBase : GUIDListBase
     {
         protected override string mainListName { get { return "files"; } }
 
         public List<string> file { get { return mainList; } }
 
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "buildActionMask", PropertyType.Regular },
@@ -466,10 +484,10 @@ namespace UnityEditor.iOS.Xcode
             { "runOnlyForDeploymentPostprocessing", PropertyType.Regular }
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
     }
 
-    class PBXSourcesBuildPhase : FileGUIDListBase
+    internal class PBXSourcesBuildPhase : FileGUIDListBase
     {
         public static PBXSourcesBuildPhase Create()
         {
@@ -483,7 +501,7 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXFrameworksBuildPhase : FileGUIDListBase
+    internal class PBXFrameworksBuildPhase : FileGUIDListBase
     {
         public static PBXFrameworksBuildPhase Create()
         {
@@ -497,7 +515,7 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXResourcesBuildPhase : FileGUIDListBase
+    internal class PBXResourcesBuildPhase : FileGUIDListBase
     {
         public static PBXResourcesBuildPhase Create()
         {
@@ -511,9 +529,9 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXCopyFilesBuildPhase : FileGUIDListBase
+    internal class PBXCopyFilesBuildPhase : FileGUIDListBase
     {
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "buildActionMask", PropertyType.Regular },
@@ -524,12 +542,10 @@ namespace UnityEditor.iOS.Xcode
             { "name", PropertyType.Regular }
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
 
-        public string name
-        {
-            get
-            {
+        public string name {
+            get {
                 if (m_Properties.ContainsKey("name"))
                     return m_Properties["name"];
                 return null;
@@ -553,13 +569,13 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXShellScriptBuildPhase : GUIDListBase
+    internal class PBXShellScriptBuildPhase : GUIDListBase
     {
         protected override string mainListName { get { return "files"; } }
 
         public List<string> file { get { return mainList; } }
 
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "buildActionMask", PropertyType.Regular },
@@ -571,12 +587,12 @@ namespace UnityEditor.iOS.Xcode
             { "runOnlyForDeploymentPostprocessing", PropertyType.Regular },
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
     }
 
-    class BuildConfigEntry
+    internal class BuildConfigEntry
     {
-        public string       name;
+        public string name;
         public List<string> val = new List<string>();
 
         public static string ExtractValue(string src)
@@ -592,7 +608,7 @@ namespace UnityEditor.iOS.Xcode
             {
                 Match m = PBXRegex.ListHeader.Match(curLine);
                 name = PBXStream.UnquoteString(m.Groups[1].Value);
-                PBXStream.ReadLinesUntilConditionIsMet(sr, val, ExtractValue, s => s.Trim() == ");");
+                PBXStream.ReadLinesUntilConditionIsMet(sr, val, s => ExtractValue(s), s => s.Trim() == ");");
             }
             else
             {
@@ -606,44 +622,45 @@ namespace UnityEditor.iOS.Xcode
         {
             if (val.Count == 0)
             {
+                return;
             }
             else if (val.Count == 1)
             {
-                sw.WriteLine("\t\t\t\t{0} = {1};", PBXStream.QuoteStringIfNeeded(name), PBXStream.QuoteStringIfNeeded(val[0]));
+                sw.WriteLine(String.Format("\t\t\t\t{0} = {1};", PBXStream.QuoteStringIfNeeded(name), PBXStream.QuoteStringIfNeeded(val[0])));
             }
             else
             {
-                sw.WriteLine("\t\t\t\t{0} = (", PBXStream.QuoteStringIfNeeded(name));
+                sw.WriteLine(String.Format("\t\t\t\t{0} = (", PBXStream.QuoteStringIfNeeded(name)));
                 foreach (string s in val)
-                    sw.WriteLine("\t\t\t\t\t{0},", PBXStream.QuoteStringIfNeeded(s));
+                    sw.WriteLine(String.Format("\t\t\t\t\t{0},", PBXStream.QuoteStringIfNeeded(s)));
                 sw.WriteLine("\t\t\t\t);");
             }
         }
 
-        public void AddValue(string aVal)
+        public void AddValue(string val)
         {
-            val.Add(ExtractValue(aVal));
+            this.val.Add(ExtractValue(val));
         }
 
         public static BuildConfigEntry FromNameValue(string name, string value)
         {
-            var ret = new BuildConfigEntry();
+            BuildConfigEntry ret = new BuildConfigEntry();
             ret.name = name;
             ret.AddValue(value);
             return ret;
         }
     }
 
-    class XCBuildConfiguration : PBXObject
+    internal class XCBuildConfiguration : PBXObject
     {
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "buildSettings", PropertyType.BuildPropertiesList },
             { "name", PropertyType.Regular },
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
 
         public SortedDictionary<string, BuildConfigEntry> entry = new SortedDictionary<string, BuildConfigEntry>();
         public string name { get { return m_Properties["name"]; } }
@@ -655,7 +672,7 @@ namespace UnityEditor.iOS.Xcode
             curLine = sr.ReadLine();
             while (curLine.Trim() != "};")
             {
-                var val = new BuildConfigEntry();
+                BuildConfigEntry val = new BuildConfigEntry();
                 val.Read(curLine, sr);
                 entry[val.name] = val;
 
@@ -678,7 +695,7 @@ namespace UnityEditor.iOS.Xcode
         protected void WriteBuildPropertiesListProperty(string prop, TextWriter sw, GUIDToCommentMap comments)
         {
             sw.WriteLine("\t\t\tbuildSettings = {");
-            foreach (BuildConfigEntry e in entry.Values)
+            foreach(BuildConfigEntry e in entry.Values)
                 e.Write(sw, comments);
             sw.WriteLine("\t\t\t};");
         }
@@ -693,29 +710,31 @@ namespace UnityEditor.iOS.Xcode
                 WriteBuildPropertiesListProperty(prop, sw, comments);
         }
 
-        public void SetProperty(string aName, string value)
+        public void SetProperty(string name, string value)
         {
-            entry[aName] = BuildConfigEntry.FromNameValue(aName, value);
+            entry[name] = BuildConfigEntry.FromNameValue(name, value);
         }
 
-        public void AddProperty(string aName, string value)
+        public void AddProperty(string name, string value)
         {
-            if (entry.ContainsKey(aName))
-                entry[aName].AddValue(value);
+            if (entry.ContainsKey(name))
+                entry[name].AddValue(value);
             else
-                SetProperty(aName, value);
+                SetProperty(name, value);
         }
 
-        public void UpdateProperties(string aName, string[] addValues, string[] removeValues)
+        public void UpdateProperties(string name, string[] addValues, string[] removeValues)
         {
-            if (entry.ContainsKey(aName))
+            if (entry.ContainsKey(name))
             {
-                var valSet = new HashSet<string>(entry[aName].val);
+                HashSet<string> valSet = new HashSet<string>(entry[name].val);
 
-                if (removeValues != null) valSet.ExceptWith(removeValues);
-                if (addValues != null) valSet.UnionWith(addValues);
+                if (removeValues != null)
+                    valSet.ExceptWith(removeValues);
+                if (addValues != null)
+                    valSet.UnionWith(addValues);
 
-                entry[aName].val = new List<string>(valSet);
+                entry[name].val = new List<string>(valSet);
             }
         }
 
@@ -735,11 +754,11 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXContainerItemProxy : GUIDListBase
+    internal class PBXContainerItemProxy : GUIDListBase
     {
         protected override string mainListName { get { return "none"; } }
 
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "containerPortal", PropertyType.CommentedGuid }, // guid
@@ -748,7 +767,7 @@ namespace UnityEditor.iOS.Xcode
             { "remoteInfo", PropertyType.Regular },
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
 
         public static PBXContainerItemProxy Create(string containerRef, string proxyType,
                                                    string remoteGlobalGUID, string remoteInfo)
@@ -764,11 +783,11 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXReferenceProxy : GUIDListBase
+    internal class PBXReferenceProxy : GUIDListBase
     {
         protected override string mainListName { get { return "none"; } }
 
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "path", PropertyType.Regular },
@@ -777,7 +796,7 @@ namespace UnityEditor.iOS.Xcode
             { "remoteRef", PropertyType.CommentedGuid }, // guid
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
 
         public string path { get { return m_Properties["path"]; } }
 
@@ -795,16 +814,16 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class PBXTargetDependency : PBXObject
+    internal class PBXTargetDependency : PBXObject
     {
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "target", PropertyType.CommentedGuid },
             { "targetProxy", PropertyType.CommentedGuid }
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
 
         public static PBXTargetDependency Create(string target, string targetProxy)
         {
@@ -817,7 +836,7 @@ namespace UnityEditor.iOS.Xcode
         }
     }
 
-    class ProjectReference
+    internal class ProjectReference
     {
         public string group;      // guid
         public string projectRef; // guid
@@ -836,7 +855,7 @@ namespace UnityEditor.iOS.Xcode
                 throw new Exception("Wrong entry passed to ProjectReference.Read");
 
             curLine = sr.ReadLine();
-            while (curLine.Trim() != "}")
+            while (curLine.Trim() != "}" && curLine.Trim() != "},") 
             {
                 Match m = PBXRegex.KeyValue.Match(curLine.Trim());
                 if (m.Success)
@@ -856,17 +875,17 @@ namespace UnityEditor.iOS.Xcode
         public void Write(TextWriter sw, GUIDToCommentMap comments)
         {
             sw.WriteLine("\t\t\t\t{");
-            sw.WriteLine("\t\t\t\t\tProductGroup = {0};", CommentedGUID.Write(@group, comments));
-            sw.WriteLine("\t\t\t\t\tProjectRef = {0};", CommentedGUID.Write(projectRef, comments));
-            sw.WriteLine("\t\t\t\t}");
+            sw.WriteLine(String.Format("\t\t\t\t\tProductGroup = {0};", CommentedGUID.Write(group, comments)));
+            sw.WriteLine(String.Format("\t\t\t\t\tProjectRef = {0};", CommentedGUID.Write(projectRef, comments)));
+            sw.WriteLine("\t\t\t\t},");
         }
     }
 
-    class PBXProjectObject : GUIDListBase
+    internal class PBXProjectObject : GUIDListBase
     {
         protected override string mainListName { get { return "targets"; } }
 
-        static readonly KnownProperties k_KnownProps = new KnownProperties
+        private static KnownProperties knownProps = new KnownProperties
         {
             { "isa", PropertyType.Regular },
             { "attributes", PropertyType.ProjectAttributeList },
@@ -882,18 +901,14 @@ namespace UnityEditor.iOS.Xcode
             { "projectReferences", PropertyType.ProjectReferenceList },
         };
 
-        protected override KnownProperties knownProperties { get { return k_KnownProps; } }
+        protected override KnownProperties knownProperties { get { return knownProps; } }
 
         public List<ProjectReference> projectReferences = new List<ProjectReference>();
         protected List<string> m_AttributeLines = new List<string>();
         public string mainGroup { get { return m_Properties["mainGroup"]; } }
         public List<string> targets { get { return m_ListProperties["targets"]; } }
-
-        public string buildConfigList
-        {
-            get { return m_Properties["buildConfigurationList"]; }
-            set { m_Properties["buildConfigurationList"] = value; }
-        }
+        public string buildConfigList { get { return m_Properties["buildConfigurationList"]; }
+                                        set { m_Properties["buildConfigurationList"] = value; } }
 
         protected string ReadProjectAttributeProperty(string curLine, TextReader sr)
         {
@@ -904,7 +919,7 @@ namespace UnityEditor.iOS.Xcode
             m_AttributeLines.Add(curLine);
             int nesting = 1;
 
-            while (nesting > 0)
+            while (nesting > 0) 
             {
                 curLine = sr.ReadLine();
                 if (curLine.Contains("= {"))
@@ -997,4 +1012,6 @@ namespace UnityEditor.iOS.Xcode
             projectReferences.Add(ProjectReference.Create(productGroup, projectRef));
         }
     }
+
 } // namespace UnityEditor.iOS.Xcode
+

@@ -1,24 +1,27 @@
-using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using System.IO;
+using System;
 
-// Base classes for section handling
+// Basr classes for section handling
 
 namespace UnityEditor.iOS.Xcode
 {
+
     // common base
-    abstract class SectionBase
+    internal abstract class SectionBase
     {
-        public abstract void    ReadSection(string curLine, TextReader sr);
-        public abstract void    WriteSection(TextWriter sw, GUIDToCommentMap comments);
+        public abstract void ReadSection(string curLine, TextReader sr);
+        public abstract void WriteSection(TextWriter sw, GUIDToCommentMap comments);
     }
 
+
     // known section: contains objects that we care about
-    class KnownSectionBase<T> : SectionBase where T : PBXObjectBase, new()
+    internal class KnownSectionBase<T> : SectionBase where T : PBXObjectBase, new()
     {
         public SortedDictionary<string, T> entry = new SortedDictionary<string, T>();
 
-        readonly string m_Name;
+        private string m_Name;
 
         public KnownSectionBase(string sectionName)
         {
@@ -35,7 +38,7 @@ namespace UnityEditor.iOS.Xcode
             curLine = PBXStream.ReadSkippingEmptyLines(sr);
             while (!PBXRegex.EndSection.IsMatch(curLine))
             {
-                var obj = new T();
+                T obj = new T();
                 obj.ReadFromSection(curLine, sr);
                 entry[obj.guid] = obj;
 
@@ -46,19 +49,18 @@ namespace UnityEditor.iOS.Xcode
         public override void WriteSection(TextWriter sw, GUIDToCommentMap comments)
         {
             if (entry.Count == 0)
-                return;         // do not write empty sections
+                return;            // do not write empty sections
 
             sw.WriteLine();
-            sw.WriteLine("/* Begin {0} section */", m_Name);
+            sw.WriteLine(String.Format("/* Begin {0} section */", m_Name));
             foreach (T obj in entry.Values)
                 obj.WriteToSection(sw, comments);
-            sw.WriteLine("/* End {0} section */", m_Name);
+            sw.WriteLine(String.Format("/* End {0} section */", m_Name));
         }
 
         public T this[string guid]
         {
-            get
-            {
+            get {
                 if (entry.ContainsKey(guid))
                     return entry[guid];
                 return null;
@@ -78,7 +80,7 @@ namespace UnityEditor.iOS.Xcode
     }
 
     // just stores text line by line
-    class TextSection : SectionBase
+    internal class TextSection : SectionBase
     {
         public List<string> text = new List<string>();
 
@@ -91,13 +93,13 @@ namespace UnityEditor.iOS.Xcode
         public override void WriteSection(TextWriter sw, GUIDToCommentMap comments)
         {
             sw.WriteLine();
-            foreach (string s in text)
+            foreach(string s in text)
                 sw.WriteLine(s);
         }
     }
 
     // we assume there is only one PBXProject entry
-    class PBXProjectSection : KnownSectionBase<PBXProjectObject>
+    internal class PBXProjectSection : KnownSectionBase<PBXProjectObject>
     {
         public PBXProjectSection() : base("PBXProject")
         {
@@ -105,12 +107,12 @@ namespace UnityEditor.iOS.Xcode
 
         public PBXProjectObject project
         {
-            get
-            {
+            get {
                 foreach (var kv in entry)
                     return kv.Value;
                 return null;
             }
         }
     }
+
 } // UnityEditor.iOS.Xcode

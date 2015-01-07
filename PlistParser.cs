@@ -8,9 +8,10 @@ using System.Xml.XPath;
 
 namespace UnityEditor.iOS.Xcode
 {
+
     public class PlistElement
     {
-        protected PlistElement() { }
+        protected PlistElement() {}
 
         // convenience methods
         public string AsString() { return ((PlistElementString)this).value; }
@@ -49,19 +50,21 @@ namespace UnityEditor.iOS.Xcode
 
     public class PlistElementDict : PlistElement
     {
-        readonly SortedDictionary<string, PlistElement> m_PrivateValue = new SortedDictionary<string, PlistElement>();
+        public PlistElementDict() : base() {}
+
+        private SortedDictionary<string, PlistElement> m_PrivateValue = new SortedDictionary<string, PlistElement>();
         public IDictionary<string, PlistElement> values { get { return m_PrivateValue; }}
 
         new public PlistElement this[string key]
         {
-            get
-            {
+            get {
                 if (values.ContainsKey(key))
                     return values[key];
                 return null;
             }
-            set { values[key] = value; }
+            set { this.values[key] = value; }
         }
+
 
         // convenience methods
         public void SetInteger(string key, int val)
@@ -96,6 +99,7 @@ namespace UnityEditor.iOS.Xcode
 
     public class PlistElementArray : PlistElement
     {
+        public PlistElementArray() : base() {}
         public List<PlistElement> values = new List<PlistElement>();
 
         // convenience methods
@@ -143,7 +147,7 @@ namespace UnityEditor.iOS.Xcode
         // Parses a string that contains a XML file. No validation is done.
         internal static XDocument ParseXmlNoDtd(string text)
         {
-            var settings = new XmlReaderSettings();
+            XmlReaderSettings settings = new XmlReaderSettings();
             settings.ProhibitDtd = false;
             settings.XmlResolver = null; // prevent DTD download
 
@@ -162,7 +166,7 @@ namespace UnityEditor.iOS.Xcode
             // Also, utf-8 encoding is forced since this is the encoding we use when writing to file in UpdateInfoPlist.
             if (doc.DocumentType != null)
             {
-                var tmpDoc =
+                XDocument tmpDoc =
                     new XDocument(new XDeclaration("1.0", "utf-8", null),
                                   new XDocumentType(doc.DocumentType.Name, doc.DocumentType.PublicId, doc.DocumentType.SystemId, null),
                                   new XElement(doc.Root.Name));
@@ -170,23 +174,23 @@ namespace UnityEditor.iOS.Xcode
             }
             else
             {
-                var tmpDoc = new XDocument(new XDeclaration("1.0", "utf-8", null), new XElement(doc.Root.Name));
+                XDocument tmpDoc = new XDocument(new XDeclaration("1.0", "utf-8", null), new XElement(doc.Root.Name));
                 return "" + tmpDoc.Declaration + Environment.NewLine + doc.Root;
             }
         }
 
-        static string GetText(XElement xml)
+        private static string GetText(XElement xml)
         {
             return String.Join("", xml.Nodes().OfType<XText>().Select(x => x.Value).ToArray());
         }
 
-        static PlistElement ReadElement(XElement xml)
+        private static PlistElement ReadElement(XElement xml)
         {
             switch (xml.Name.LocalName)
             {
                 case "dict":
                 {
-                    var children = xml.Elements().ToList();
+                    List<XElement> children = xml.Elements().ToList();
                     var el = new PlistElementDict();
 
                     if (children.Count % 2 == 1)
@@ -197,7 +201,7 @@ namespace UnityEditor.iOS.Xcode
                         if (children[i].Name != "key")
                             throw new Exception("Malformed plist file");
                         string key = GetText(children[i]).Trim();
-                        var newChild = ReadElement(children[i + 1]);
+                        var newChild = ReadElement(children[i+1]);
                         if (newChild != null)
                         {
                             i++;
@@ -208,7 +212,7 @@ namespace UnityEditor.iOS.Xcode
                 }
                 case "array":
                 {
-                    var children = xml.Elements().ToList();
+                    List<XElement> children = xml.Elements().ToList();
                     var el = new PlistElementArray();
 
                     foreach (var childXml in children)
@@ -250,7 +254,7 @@ namespace UnityEditor.iOS.Xcode
         public void ReadFromString(string text)
         {
             XDocument doc = ParseXmlNoDtd(text);
-            version = (string)doc.Root.Attribute("version");
+            version = (string) doc.Root.Attribute("version");
             XElement xml = doc.XPathSelectElement("plist/dict");
 
             var dict = ReadElement(xml);
@@ -261,7 +265,7 @@ namespace UnityEditor.iOS.Xcode
                 throw new Exception("Malformed plist file");
         }
 
-        static XElement WriteElement(PlistElement el)
+        private static XElement WriteElement(PlistElement el)
         {
             if (el is PlistElementBoolean)
             {
@@ -331,4 +335,5 @@ namespace UnityEditor.iOS.Xcode
             return CleanDtdToString(doc);
         }
     }
+
 } // namespace UnityEditor.iOS.XCode
