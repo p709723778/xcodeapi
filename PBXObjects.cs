@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections;
 using System.Text.RegularExpressions;
 using System.IO;
 using System.Linq;
@@ -7,418 +8,419 @@ using System;
 
 namespace UnityEditor.iOS.Xcode
 {
-
-    using KnownProperties = SortedDictionary<string, PropertyType>;
-
-    internal abstract class PBXObjectBase
+    
+    class PBXElement
     {
-        public string guid;
-
-        public void ReadFromSection(string curLine, TextReader sr)
+        protected PBXElement() {}
+        
+        // convenience methods
+        public string AsString() { return ((PBXElementString)this).value; }
+        public PBXElementArray AsArray() { return (PBXElementArray)this; }
+        public PBXElementDict AsDict()   { return (PBXElementDict)this; }
+        
+        public PBXElement this[string key]
         {
-            guid = CommentedGUID.ReadString(curLine);
-            ReadFromSectionImpl(curLine, sr);
+            get { return AsDict()[key]; }
+            set { AsDict()[key] = value; }
         }
-
-        public abstract void WriteToSection(TextWriter sw, GUIDToCommentMap comments);
-        protected abstract void ReadFromSectionImpl(string curLine, TextReader srs);
+    }
+    
+    class PBXElementString : PBXElement
+    {
+        public PBXElementString(string v) { value = v; }
+        
+        public string value;
     }
 
-    internal class PBXBuildFile : PBXObjectBase
+    class PBXElementDict : PBXElement
     {
-        public string postfix;
+        public PBXElementDict() : base() {}
+        
+        private SortedDictionary<string, PBXElement> m_PrivateValue = new SortedDictionary<string, PBXElement>();
+        public IDictionary<string, PBXElement> values { get { return m_PrivateValue; }}
+        
+        new public PBXElement this[string key]
+        {
+            get {
+                if (values.ContainsKey(key))
+                    return values[key];
+                return null;
+            }
+            set { this.values[key] = value; }
+        }
+        
+        public bool Contains(string key)
+        {
+            return values.ContainsKey(key);
+        }
+        
+        public void Remove(string key)
+        {
+            values.Remove(key);
+        }
+
+        public void SetString(string key, string val)
+        {
+            values[key] = new PBXElementString(val);
+        }
+        
+        public PBXElementArray CreateArray(string key)
+        {
+            var v = new PBXElementArray();
+            values[key] = v;
+            return v;
+        }
+        
+        public PBXElementDict CreateDict(string key)
+        {
+            var v = new PBXElementDict();
+            values[key] = v;
+            return v;
+        }
+    }
+    
+    class PBXElementArray : PBXElement
+    {
+        public PBXElementArray() : base() {}
+        public List<PBXElement> values = new List<PBXElement>();
+        
+        // convenience methods
+        public void AddString(string val)
+        {
+            values.Add(new PBXElementString(val));
+        }
+        
+        public PBXElementArray AddArray()
+        {
+            var v = new PBXElementArray();
+            values.Add(v);
+            return v;
+        }
+        
+        public PBXElementDict AddDict()
+        {
+            var v = new PBXElementDict();
+            values.Add(v);
+            return v;
+        }
+    }
+
+    internal class PBXObject
+    {   
+        public string guid;
+        protected PBXElementDict m_Properties = new PBXElementDict();
+        
+        internal void SetPropertiesWhenSerializing(PBXElementDict props)
+        {
+            m_Properties = props;
+        }
+        
+        internal PBXElementDict GetPropertiesWhenSerializing() 
+        { 
+            return m_Properties; 
+        }
+        
+        // returns null if it does not exist
+        protected string GetPropertyString(string name)
+        {
+            var prop = m_Properties[name];
+            if (prop == null)
+                return null;
+
+            return prop.AsString();
+        }
+        
+        protected void SetPropertyString(string name, string value)
+        {
+            if (value == null)
+                m_Properties.Remove(name);
+            else
+                m_Properties.SetString(name, value);
+        }
+        
+        protected List<string> GetPropertyList(string name)
+        {
+            var prop = m_Properties[name];
+            if (prop == null)
+                return null;
+            
+            var list = new List<string>();
+            foreach (var el in prop.AsArray().values)
+                list.Add(el.AsString());
+            return list;
+        }
+        
+        protected void SetPropertyList(string name, List<string> value)
+        {
+            if (value == null)
+                m_Properties.Remove(name);
+            else
+            {
+                var array = m_Properties.CreateArray(name);
+                foreach (string val in value)
+                    array.AddString(val);
+            }
+        }
+        
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker();
+        internal virtual PropertyCommentChecker checker { get { return checkerData; } }
+        internal virtual bool shouldCompact { get { return false; } }
+        
+        public virtual void UpdateProps() {}      // Updates the props from cached variables
+        public virtual void UpdateVars() {}       // Updates the cached variables from underlying props
+    }
+    
+    internal class PBXBuildFile : PBXObject
+    {
         public string fileRef;
-
-        protected override void ReadFromSectionImpl(string curLine, TextReader sr)
-        {
-            Match m = PBXRegex.BuildFile.Match(curLine);
-            fileRef = m.Groups[2].Value;
-            postfix = m.Groups[3].Value;
-        }
-        public override void WriteToSection(TextWriter sw, GUIDToCommentMap comments)
-        {
-            sw.WriteLine(String.Format("\t\t{0} = {{isa = PBXBuildFile; fileRef = {1}; {2}}};",
-                         CommentedGUID.Write(guid, comments),
-                         CommentedGUID.Write(fileRef, comments),
-                         postfix));
-        }
-
+        public string compileFlags;
+        public bool weak;
+        
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "fileRef/*"
+        });
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
+        internal override bool shouldCompact { get { return true; } }
+        
         public static PBXBuildFile CreateFromFile(string fileRefGUID, bool weak,
                                                   string compileFlags)
         {
             PBXBuildFile buildFile = new PBXBuildFile();
             buildFile.guid = PBXGUID.Generate();
+            buildFile.SetPropertyString("isa", "PBXBuildFile");
             buildFile.fileRef = fileRefGUID;
-            buildFile.postfix = "";
-            if (weak || (compileFlags != null && compileFlags != ""))
-            {
-                string data = "";
-                if (weak)
-                    data += "ATTRIBUTES = (Weak, ); ";
-                if (compileFlags != null && compileFlags != "")
-                    data += "COMPILER_FLAGS = \"" + compileFlags.Replace("\"", "\\\"") + "\"; ";
-                buildFile.postfix = "settings = {" + data + "}; ";
-            }
-
+            buildFile.compileFlags = compileFlags;
+            buildFile.weak = weak;
             return buildFile;
         }
-    }
+        
+        PBXElementDict GetSettingsDict()
+        {
+            if (m_Properties.Contains("settings"))
+                return m_Properties["settings"].AsDict();
+            else
+                return m_Properties.CreateDict("settings");        
+        }
+        
+        public override void UpdateProps()
+        {
+            SetPropertyString("fileRef", fileRef);
+            if (compileFlags != null && compileFlags != "")
+            {
+                GetSettingsDict().SetString("COMPILER_FLAGS", compileFlags);
+            }
+            if (weak)
+            {
+                var dict = GetSettingsDict();
+                PBXElementArray attrs = null;
+                if (dict.Contains("ATTRIBUTES"))
+                    attrs = dict["ATTRIBUTES"].AsArray();
+                else
+                    attrs = dict.CreateArray("ATTRIBUTES");
+                    
+                bool exists = false;
+                foreach (var value in attrs.values)
+                {
+                    if (value is PBXElementString && value.AsString() == "Weak")
+                        exists = true;
+                }
+                if (!exists)
+                    attrs.AddString("Weak");
+            }
+        }
 
-    internal class PBXFileReference : PBXObjectBase
+        public override void UpdateVars()
+        {
+            fileRef = GetPropertyString("fileRef");
+            compileFlags = null;
+            weak = false;
+            if (m_Properties.Contains("settings"))
+            {
+                var dict = m_Properties["settings"].AsDict();
+                if (dict.Contains("COMPILER_FLAGS"))
+                    compileFlags = dict["COMPILER_FLAGS"].AsString();
+                
+                if (dict.Contains("ATTRIBUTES"))
+                {
+                    var attrs = dict["ATTRIBUTES"].AsArray();
+                    foreach (var value in attrs.values)
+                    {
+                        if (value is PBXElementString && value.AsString() == "Weak")
+                            weak = true;
+                    }
+                }
+            }
+        }
+    }
+    
+    internal class PBXFileReference : PBXObject
     {
-        public string text;
         public string path;
         public string name;
         public PBXSourceTree tree;
-
-        protected override void ReadFromSectionImpl(string curLine, TextReader sr)
-        {
-            Match m = PBXRegex.AnyKeyValue.Match(curLine.Trim());
-            text = m.Groups[2].Value;
-
-            m = PBXRegex.FileRef.Match(curLine);
-            name = path = PBXStream.UnquoteString(m.Groups[2].Value.Trim());
-            if (PBXRegex.FileRefName.IsMatch(curLine))
-                name = PBXStream.UnquoteString(PBXRegex.FileRefName.Match(curLine).Groups[1].Value);
-        }
-        public override void WriteToSection(TextWriter sw, GUIDToCommentMap comments)
-        {
-            sw.WriteLine(String.Format("\t\t{0} = {1};", CommentedGUID.Write(guid, comments), text));
-        }
-
+        
+        internal override bool shouldCompact { get { return true; } }
+        
         public static PBXFileReference CreateFromFile(string path, string projectFileName,
                                                       PBXSourceTree tree)
         {
             string guid = PBXGUID.Generate();
-
+            
             PBXFileReference fileRef = new PBXFileReference();
+            fileRef.SetPropertyString("isa", "PBXFileReference");
             fileRef.guid = guid;
-
             fileRef.path = path;
             fileRef.name = projectFileName;
             fileRef.tree = tree;
-            fileRef.text = String.Format("{{isa = PBXFileReference; lastKnownFileType = {0}; name = {1}; path = {2}; sourceTree = {3}; }}",
-                                         FileTypeUtils.GetTypeName(Path.GetExtension(fileRef.name)),
-                                         PBXStream.QuoteStringIfNeeded(fileRef.name),
-                                         PBXStream.QuoteStringIfNeeded(fileRef.path),
-                                         PBXStream.QuoteStringIfNeeded(FileTypeUtils.SourceTreeDesc(tree)));
             return fileRef;
         }
-    }
-
-    internal enum PropertyType
-    {
-        Regular,
-        RegularList,
-        CommentedGuid,
-        CommentedGuidList,
-        BuildPropertiesList,
-        ProjectAttributeList,
-        ProjectReferenceList,
-        None
-    }
-
-    internal abstract class PBXObject : PBXObjectBase
-    {
-        protected List<string> m_BadLines = new List<string>();
-        protected abstract KnownProperties knownProperties { get; }
-
-        protected Dictionary<string, string> m_Properties = new Dictionary<string, string>();
-
-        private PropertyType GetPropertyTypeForLine(string line)
+        
+        public override void UpdateProps()
         {
-            string trimmed = line.Trim();
-            Match m = PBXRegex.Key.Match(trimmed);
-            if (!m.Success)
-                return PropertyType.None;
-            string key = m.Groups[1].Value.Trim();
-            if (!knownProperties.ContainsKey(key))
-                return PropertyType.None;
-            return knownProperties[key];
-        }
-
-        protected void ReadRegularProperty(string curLine)
-        {
-            Match m = PBXRegex.KeyValue.Match(curLine.Trim());
-            string key = m.Groups[1].Value.Trim();
-            m_Properties[key] = PBXStream.UnquoteString(m.Groups[2].Value.Trim());
-        }
-
-        protected void ReadCommentedGuidProperty(string curLine)
-        {
-            Match m = PBXRegex.KeyValue.Match(curLine.Trim());
-            string key = m.Groups[1].Value.Trim();
-            m_Properties[key] = CommentedGUID.ReadString(m.Groups[2].Value.Trim());
-        }
-
-        // return new curLine
-        protected virtual string ReadProperty(PropertyType prop, string curLine, TextReader sr)
-        {
-            if (prop == PropertyType.Regular)
-                ReadRegularProperty(curLine);
-            else if (prop == PropertyType.CommentedGuid)
-                ReadCommentedGuidProperty(curLine);
-            return curLine;
-        }
-
-        protected override void ReadFromSectionImpl(string curLine, TextReader sr)
-        {
-            // TODO: the implementation works but is not most elegant
-            curLine = sr.ReadLine();
-
-            while (curLine.Trim() != "};")
+            string ext = null;
+            if (name != null) 
+                ext = Path.GetExtension(name);
+            else if (path != null)
+                ext = Path.GetExtension(path);
+            if (ext != null)
             {
-                PropertyType propType = GetPropertyTypeForLine(curLine);
-                if (propType == PropertyType.None)
-                    m_BadLines.Add(curLine);
+                if (FileTypeUtils.IsFileTypeExplicit(ext))
+                    SetPropertyString("explicitFileType", FileTypeUtils.GetTypeName(ext));
                 else
-                    curLine = ReadProperty(propType, curLine, sr);
-                curLine = sr.ReadLine();
+                    SetPropertyString("lastKnownFileType", FileTypeUtils.GetTypeName(ext));
             }
+            if (path == name)
+                SetPropertyString("name", null);
+            else
+                SetPropertyString("name", name);
+            if (path == null)
+                SetPropertyString("path", "");
+            else
+                SetPropertyString("path", path);
+            SetPropertyString("sourceTree", FileTypeUtils.SourceTreeDesc(tree));
         }
-
-        protected void WriteRegularProperty(string prop, TextWriter sw)
+        public override void UpdateVars()
         {
-            sw.WriteLine("\t\t\t{0} = {1};", prop, PBXStream.QuoteStringIfNeeded(m_Properties[prop]));
-        }
-
-        protected void WriteCommentedGuidProperty(string prop, TextWriter sw, GUIDToCommentMap comments)
-        {
-            sw.WriteLine("\t\t\t{0} = {1};", prop, CommentedGUID.Write(m_Properties[prop], comments));
-        }
-
-        protected virtual void WriteProperty(PropertyType propType, string prop, TextWriter sw, GUIDToCommentMap comments)
-        {
-            if (propType == PropertyType.Regular)
-                WriteRegularProperty(prop, sw);
-            else if (propType == PropertyType.CommentedGuid)
-                WriteCommentedGuidProperty(prop, sw, comments);
-        }
-
-        private void WritePropertyWrapper(string prop, HashSet<string> processed, TextWriter sw, GUIDToCommentMap comments)
-        {
-            if (processed.Contains(prop))
-                return;
-            if (!knownProperties.ContainsKey(prop))
-                return;
-            WriteProperty(knownProperties[prop], prop, sw, comments);
-            processed.Add(prop);
-        }
-
-        protected virtual IEnumerable<string> GetPropertyNames()
-        {
-            return m_Properties.Keys;
-        }
-
-        public override void WriteToSection(TextWriter sw, GUIDToCommentMap comments)
-        {
-            // TODO: the implementation works but is not elegant
-
-            var processedProperties = new HashSet<string>();
-            var allProps = new List<string>();
-            allProps.AddRange(GetPropertyNames());
-            allProps.Sort();
-
-            sw.WriteLine(String.Format("\t\t{0} = {{", CommentedGUID.Write(guid, comments)));
-            WritePropertyWrapper("isa", processedProperties, sw, comments); // always the first
-            foreach (var prop in allProps)
-                WritePropertyWrapper(prop, processedProperties, sw, comments);
-            foreach (var line in m_BadLines)
-                sw.WriteLine(line);
-            sw.WriteLine("\t\t};");
+            name = GetPropertyString("name");
+            path = GetPropertyString("path");
+            if (name == null)
+                name = path;
+            if (path == null)
+                path = "";
+            tree = FileTypeUtils.ParseSourceTree(GetPropertyString("sourceTree"));
         }
     }
 
-    internal abstract class GUIDListBase : PBXObject
+    class GUIDList : IEnumerable<string>
     {
-        protected abstract string mainListName { get; }
+        private List<string> m_List = new List<string>();
 
-        protected List<string> mainList { get { return m_ListProperties[mainListName]; } }
-        protected Dictionary<string, List<string>> m_ListProperties = new Dictionary<string, List<string>>();
-
-        public void AddGUID(string guid)
+        public GUIDList() {}
+        public GUIDList(List<string> data) 
         {
-            mainList.Add(guid);
+            m_List = data;
         }
-
-        public void RemoveGUID(string guid)
-        {
-            mainList.RemoveAll(x => x == guid);
-        }
-
-        protected string ReadRegularListProperty(string curLine, TextReader sr)
-        {
-            Match m = PBXRegex.ListHeader.Match(curLine.Trim());
-            string key = m.Groups[1].Value.Trim();
-            var list = new List<string>();
-            curLine = sr.ReadLine();
-            while (curLine.Trim() != ");")
-            {
-                list.Add(curLine.Trim().TrimEnd(",".ToArray()));
-                curLine = sr.ReadLine();
-            }
-            m_ListProperties[key] = list;
-            return curLine;
-        }
-
-        protected string ReadCommentedGuidListProperty(string curLine, TextReader sr)
-        {
-            Match m = PBXRegex.ListHeader.Match(curLine.Trim());
-            string key = m.Groups[1].Value.Trim();
-            var list = new List<string>();
-            curLine = sr.ReadLine();
-            while (curLine.Trim() != ");")
-            {
-                list.Add(CommentedGUID.ReadString(curLine));
-                curLine = sr.ReadLine();
-            }
-            m_ListProperties[key] = list;
-            return curLine;
-        }
-
-        // return new curLine
-        protected override string ReadProperty(PropertyType prop, string curLine, TextReader sr)
-        {
-            if (prop == PropertyType.Regular)
-                ReadRegularProperty(curLine);
-            else if (prop == PropertyType.CommentedGuid)
-                ReadCommentedGuidProperty(curLine);
-            else if (prop == PropertyType.RegularList)
-                curLine = ReadRegularListProperty(curLine, sr);
-            else if (prop == PropertyType.CommentedGuidList)
-                curLine = ReadCommentedGuidListProperty(curLine, sr);
-            return curLine;
-        }
-
-        protected void WriteRegularListProperty(string prop, TextWriter sw)
-        {
-            sw.WriteLine("\t\t\t{0} = (", prop);
-            List<string> list = m_ListProperties[prop];
-            foreach (string v in list)
-                sw.WriteLine("\t\t\t\t{0},", v);
-            sw.WriteLine("\t\t\t);");
-        }
-
-        protected void WriteCommentedGuidListProperty(string prop, TextWriter sw, GUIDToCommentMap comments)
-        {
-            List<string> list = m_ListProperties[prop];
-
-            bool sortCommentedGuidLists = false;
-            if (sortCommentedGuidLists)
-            {
-                // useful in large projects as Xcode does not sort directory contents by default
-                var sorted = new List<KeyValuePair<string, string>>();
-                foreach (string v in list)
-                    sorted.Add(new KeyValuePair<string, string>(comments[v], v));
-
-                sorted.Sort((a, b) =>
-                {
-                    if (a.Key != null && b.Key != null)
-                        return String.Compare(a.Key, b.Key, false);
-                    else
-                        return 0;
-                });
-
-                list.Clear();
-                foreach (var kv in sorted)
-                    list.Add(kv.Value);
-            }
-
-            sw.WriteLine("\t\t\t{0} = (", prop);
-            foreach (string v in list)
-                sw.WriteLine("\t\t\t\t{0},", CommentedGUID.Write(v, comments));
-            sw.WriteLine("\t\t\t);");
-        }
-
-        protected override void WriteProperty(PropertyType propType, string prop, TextWriter sw, GUIDToCommentMap comments)
-        {
-            if (propType == PropertyType.Regular)
-                WriteRegularProperty(prop, sw);
-            else if (propType == PropertyType.CommentedGuid)
-                WriteCommentedGuidProperty(prop, sw, comments);
-            else if (propType == PropertyType.RegularList)
-                WriteRegularListProperty(prop, sw);
-            else if (propType == PropertyType.CommentedGuidList)
-                WriteCommentedGuidListProperty(prop, sw, comments);
-        }
-
-        protected override IEnumerable<string> GetPropertyNames()
-        {
-            return m_Properties.Keys.Concat(m_ListProperties.Keys);
-        }
+        
+        public static implicit operator List<string>(GUIDList list) { return list.m_List; }
+        public static implicit operator GUIDList(List<string> data) { return new GUIDList(data); }
+        
+        public void AddGUID(string guid)        { m_List.Add(guid); }
+        public void RemoveGUID(string guid)     { m_List.RemoveAll(x => x == guid); }
+        public bool Contains(string guid)       { return m_List.Contains(guid); }
+        public int Count                        { get { return m_List.Count; } }
+        public void Clear()                     { m_List.Clear(); }
+        IEnumerator<string> IEnumerable<string>.GetEnumerator() { return m_List.GetEnumerator(); }
+        IEnumerator IEnumerable.GetEnumerator() { return m_List.GetEnumerator(); }
     }
 
-    internal class XCConfigurationList : GUIDListBase
+    internal class XCConfigurationList : PBXObject
     {
-        protected override string mainListName { get { return "buildConfigurations"; } }
+        public GUIDList buildConfigs;
 
-        public List<string> buildConfig { get { return mainList; } }
-
-        private static KnownProperties knownProps = new KnownProperties
-        {
-            { "isa", PropertyType.Regular },
-            { "buildConfigurations", PropertyType.CommentedGuidList },
-        };
-
-        protected override KnownProperties knownProperties { get { return knownProps; } }
-
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "buildConfigurations/*"
+        });
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
+        
         public static XCConfigurationList Create()
         {
             var res = new XCConfigurationList();
             res.guid = PBXGUID.Generate();
 
-            res.m_Properties["isa"] = "XCConfigurationList";
-            res.m_ListProperties["buildConfigurations"] = new List<string>();
-            res.m_Properties["defaultConfigurationIsVisible"] = "0";
+            res.SetPropertyString("isa", "XCConfigurationList");
+            res.buildConfigs = new GUIDList();
+            res.SetPropertyString("defaultConfigurationIsVisible", "0");
 
             return res;
         }
+        
+        public override void UpdateProps()
+        {
+            SetPropertyList("buildConfigurations", buildConfigs);
+        }
+        public override void UpdateVars()
+        {
+            buildConfigs = GetPropertyList("buildConfigurations");
+        }
     }
 
-    internal class PBXGroup : GUIDListBase
+    internal class PBXGroup : PBXObject
     {
-        protected override string mainListName { get { return "children"; } }
+        public GUIDList children;
+        public PBXSourceTree tree; 
+        public string name, path;
+                
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "children/*"
+        });
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
 
-        public List<string> children { get { return mainList; } }
-
-        private static KnownProperties knownProps = new KnownProperties
+        // name must not contain '/'
+        public static PBXGroup Create(string name, string path, PBXSourceTree tree)
         {
-            { "isa", PropertyType.Regular },
-            { "name", PropertyType.Regular },
-            { "children", PropertyType.CommentedGuidList },
-            { "path", PropertyType.Regular },
-            { "sourceTree", PropertyType.Regular },
-        };
+            if (name.Contains("/"))
+                throw new Exception("Group name must not contain '/'");
 
-        protected override KnownProperties knownProperties { get { return knownProps; } }
-
-        public string name
-        {
-            get {
-                if (m_Properties.ContainsKey("path"))
-                    return m_Properties["path"];
-                if (m_Properties.ContainsKey("name"))
-                    return m_Properties["name"];
-                return null;
-            }
-            set {
-                if (m_Properties.ContainsKey("path"))
-                    m_Properties["path"] = value;
-                m_Properties["name"] = value;
-            }
-        }
-
-        public static PBXGroup Create(string name)
-        {
             PBXGroup gr = new PBXGroup();
             gr.guid = PBXGUID.Generate();
-
-            gr.m_Properties["isa"] = "PBXGroup";
-            gr.m_Properties["path"] = name;
-            gr.m_Properties["sourceTree"] = "<group>";
-            gr.m_ListProperties["children"] = new List<string>();
+            gr.SetPropertyString("isa", "PBXGroup");
+            gr.name = name;
+            gr.path = path;
+            gr.tree = PBXSourceTree.Group;
+            gr.children = new GUIDList();
 
             return gr;
+        }
+        
+        public static PBXGroup CreateRelative(string name)
+        {
+            return Create(name, name, PBXSourceTree.Group);
+        }
+        
+        public override void UpdateProps()
+        {
+            // The name property is set only if it is different from the path property
+            SetPropertyList("children", children);
+            if (name == path)
+                SetPropertyString("name", null);
+            else
+                SetPropertyString("name", name);
+            if (path == "")
+                SetPropertyString("path", null);
+            else
+                SetPropertyString("path", path);
+            SetPropertyString("sourceTree", FileTypeUtils.SourceTreeDesc(tree));
+        }
+        public override void UpdateVars()
+        {
+            children = GetPropertyList("children");
+            path = GetPropertyString("path");
+            name = GetPropertyString("name");
+            if (name == null)
+                name = path;
+            if (path == null)
+                path = "";
+            tree = FileTypeUtils.ParseSourceTree(GetPropertyString("sourceTree"));
         }
     }
 
@@ -426,65 +428,75 @@ namespace UnityEditor.iOS.Xcode
     {
     }
 
-    internal class PBXNativeTarget : GUIDListBase
+    internal class PBXNativeTarget : PBXObject
     {
-        protected override string mainListName { get { return "buildPhases"; } }
+        public GUIDList phases;
 
-        public List<string> phase { get { return mainList; } }
+        public string buildConfigList; // guid
+        public string name;
+        public GUIDList dependencies;
 
-        public string buildConfigList { get { return m_Properties["buildConfigurationList"]; }
-                                        set { m_Properties["buildConfigurationList"] = value; } } // guid
-        public string name { get { return m_Properties["name"]; } }
-        public List<string> dependencies { get { return m_ListProperties["dependencies"]; } }
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "buildPhases/*",
+            "buildRules/*",
+            "dependencies/*",
+            "productReference/*",
+            "buildConfigurationList/*"
+        });
 
-        private static KnownProperties knownProps = new KnownProperties
-        {
-            { "isa", PropertyType.Regular },
-            { "buildPhases", PropertyType.CommentedGuidList },
-            { "buildRules", PropertyType.CommentedGuidList },
-            { "dependencies", PropertyType.CommentedGuidList },
-            { "name", PropertyType.Regular },
-            { "productName", PropertyType.Regular },
-            { "productType", PropertyType.Regular },
-            { "productReference", PropertyType.CommentedGuid },
-            { "buildConfigurationList", PropertyType.CommentedGuid },
-        };
-
-        protected override KnownProperties knownProperties { get { return knownProps; } }
-
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
+        
         public static PBXNativeTarget Create(string name, string productRef, string productType, string buildConfigList)
         {
             var res = new PBXNativeTarget();
             res.guid = PBXGUID.Generate();
-            res.m_Properties["isa"] = "PBXNativeTarget";
-            res.m_Properties["buildConfigurationList"] = buildConfigList;
-            res.m_ListProperties["buildPhases"] = new List<string>();
-            res.m_ListProperties["buildRules"] = new List<string>();
-            res.m_ListProperties["dependencies"] = new List<string>();
-            res.m_Properties["name"] = name;
-            res.m_Properties["productName"] = name;
-            res.m_Properties["productReference"] = productRef;
-            res.m_Properties["productType"] = productType;
+            res.SetPropertyString("isa", "PBXNativeTarget");
+            res.buildConfigList = buildConfigList;
+            res.phases = new GUIDList();
+            res.SetPropertyList("buildRules", new List<string>());
+            res.dependencies = new GUIDList();
+            res.name = name;
+            res.SetPropertyString("productName", name);
+            res.SetPropertyString("productReference", productRef);
+            res.SetPropertyString("productType", productType);
             return res;
+        }
+        
+        public override void UpdateProps()
+        {
+            SetPropertyString("buildConfigurationList", buildConfigList);
+            SetPropertyString("name", name);
+            SetPropertyList("buildPhases", phases);
+            SetPropertyList("dependencies", dependencies);
+        }
+        public override void UpdateVars()
+        {
+            buildConfigList = GetPropertyString("buildConfigurationList");
+            name = GetPropertyString("name");
+            phases = GetPropertyList("buildPhases");
+            dependencies = GetPropertyList("dependencies");
         }
     }
 
 
-    internal class FileGUIDListBase : GUIDListBase
+    internal class FileGUIDListBase : PBXObject
     {
-        protected override string mainListName { get { return "files"; } }
+        public GUIDList files;
+ 
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "files/*",
+        });
+        
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
 
-        public List<string> file { get { return mainList; } }
-
-        private static KnownProperties knownProps = new KnownProperties
+        public override void UpdateProps()
         {
-            { "isa", PropertyType.Regular },
-            { "buildActionMask", PropertyType.Regular },
-            { "files", PropertyType.CommentedGuidList },
-            { "runOnlyForDeploymentPostprocessing", PropertyType.Regular }
-        };
-
-        protected override KnownProperties knownProperties { get { return knownProps; } }
+            SetPropertyList("files", files);
+        }
+        public override void UpdateVars()
+        {
+            files = GetPropertyList("files");
+        }
     }
 
     internal class PBXSourcesBuildPhase : FileGUIDListBase
@@ -493,10 +505,10 @@ namespace UnityEditor.iOS.Xcode
         {
             var res = new PBXSourcesBuildPhase();
             res.guid = PBXGUID.Generate();
-            res.m_Properties["isa"] = "PBXSourcesBuildPhase";
-            res.m_Properties["buildActionMask"] = "2147483647";
-            res.m_ListProperties["files"] = new List<string>();
-            res.m_Properties["runOnlyForDeploymentPostprocessing"] = "0";
+            res.SetPropertyString("isa", "PBXSourcesBuildPhase");
+            res.SetPropertyString("buildActionMask", "2147483647");
+            res.files = new List<string>();
+            res.SetPropertyString("runOnlyForDeploymentPostprocessing", "0");
             return res;
         }
     }
@@ -507,10 +519,10 @@ namespace UnityEditor.iOS.Xcode
         {
             var res = new PBXFrameworksBuildPhase();
             res.guid = PBXGUID.Generate();
-            res.m_Properties["isa"] = "PBXFrameworksBuildPhase";
-            res.m_Properties["buildActionMask"] = "2147483647";
-            res.m_ListProperties["files"] = new List<string>();
-            res.m_Properties["runOnlyForDeploymentPostprocessing"] = "0";
+            res.SetPropertyString("isa", "PBXFrameworksBuildPhase");
+            res.SetPropertyString("buildActionMask", "2147483647");
+            res.files = new List<string>();
+            res.SetPropertyString("runOnlyForDeploymentPostprocessing", "0");
             return res;
         }
     }
@@ -521,73 +533,69 @@ namespace UnityEditor.iOS.Xcode
         {
             var res = new PBXResourcesBuildPhase();
             res.guid = PBXGUID.Generate();
-            res.m_Properties["isa"] = "PBXResourcesBuildPhase";
-            res.m_Properties["buildActionMask"] = "2147483647";
-            res.m_ListProperties["files"] = new List<string>();
-            res.m_Properties["runOnlyForDeploymentPostprocessing"] = "0";
+            res.SetPropertyString("isa", "PBXResourcesBuildPhase");
+            res.SetPropertyString("buildActionMask", "2147483647");
+            res.files = new List<string>();
+            res.SetPropertyString("runOnlyForDeploymentPostprocessing", "0");
             return res;
         }
     }
 
     internal class PBXCopyFilesBuildPhase : FileGUIDListBase
     {
-        private static KnownProperties knownProps = new KnownProperties
-        {
-            { "isa", PropertyType.Regular },
-            { "buildActionMask", PropertyType.Regular },
-            { "dstPath", PropertyType.Regular },
-            { "dstSubfolderSpec", PropertyType.Regular },
-            { "runOnlyForDeploymentPostprocessing", PropertyType.Regular },
-            { "files", PropertyType.CommentedGuidList },
-            { "name", PropertyType.Regular }
-        };
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "files/*",
+        });
+        
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
 
-        protected override KnownProperties knownProperties { get { return knownProps; } }
-
-        public string name {
-            get {
-                if (m_Properties.ContainsKey("name"))
-                    return m_Properties["name"];
-                return null;
-            }
-        }
+        public string name;
 
         // name may be null
         public static PBXCopyFilesBuildPhase Create(string name, string subfolderSpec)
         {
             var res = new PBXCopyFilesBuildPhase();
             res.guid = PBXGUID.Generate();
-            res.m_Properties["isa"] = "PBXCopyFilesBuildPhase";
-            res.m_Properties["buildActionMask"] = "2147483647";
-            res.m_Properties["dstPath"] = "";
-            res.m_Properties["dstSubfolderSpec"] = subfolderSpec;
-            res.m_ListProperties["files"] = new List<string>();
-            res.m_Properties["runOnlyForDeploymentPostprocessing"] = "0";
-            if (name != null)
-                res.m_Properties["name"] = name;
+            res.SetPropertyString("isa", "PBXCopyFilesBuildPhase");
+            res.SetPropertyString("buildActionMask", "2147483647");
+            res.SetPropertyString("dstPath", "");
+            res.SetPropertyString("dstSubfolderSpec", subfolderSpec);
+            res.files = new List<string>();
+            res.SetPropertyString("runOnlyForDeploymentPostprocessing", "0");
+            res.name = name;
             return res;
+        }
+        
+        public override void UpdateProps()
+        {
+            SetPropertyList("files", files);
+            SetPropertyString("name", name);
+        }
+        public override void UpdateVars()
+        {
+            files = GetPropertyList("files");
+            name = GetPropertyString("name");
         }
     }
 
-    internal class PBXShellScriptBuildPhase : GUIDListBase
+    internal class PBXShellScriptBuildPhase : PBXObject
     {
-        protected override string mainListName { get { return "files"; } }
+        public GUIDList files;
 
-        public List<string> file { get { return mainList; } }
-
-        private static KnownProperties knownProps = new KnownProperties
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "files/*",
+        });
+        
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
+        
+        public override void UpdateProps()
         {
-            { "isa", PropertyType.Regular },
-            { "buildActionMask", PropertyType.Regular },
-            { "files", PropertyType.CommentedGuidList },
-            { "inputPaths", PropertyType.RegularList },
-            { "outputPaths", PropertyType.RegularList },
-            { "shellPath", PropertyType.Regular },
-            { "shellScript", PropertyType.Regular },
-            { "runOnlyForDeploymentPostprocessing", PropertyType.Regular },
-        };
-
-        protected override KnownProperties knownProperties { get { return knownProps; } }
+            SetPropertyList("files", files);
+        }
+        public override void UpdateVars()
+        {
+            files = GetPropertyList("files");
+        }
     }
 
     internal class BuildConfigEntry
@@ -600,46 +608,10 @@ namespace UnityEditor.iOS.Xcode
             return PBXStream.UnquoteString(src.Trim().TrimEnd(','));
         }
 
-        public void Read(string curLine, TextReader sr)
+        public void AddValue(string value)
         {
-            val.Clear();
-
-            if (PBXRegex.ListHeader.IsMatch(curLine))
-            {
-                Match m = PBXRegex.ListHeader.Match(curLine);
-                name = PBXStream.UnquoteString(m.Groups[1].Value);
-                PBXStream.ReadLinesUntilConditionIsMet(sr, val, s => ExtractValue(s), s => s.Trim() == ");");
-            }
-            else
-            {
-                Match m = PBXRegex.KeyValue.Match(curLine);
-                name = PBXStream.UnquoteString(m.Groups[1].Value);
-                AddValue(PBXStream.UnquoteString(m.Groups[2].Value));
-            }
-        }
-
-        public void Write(TextWriter sw, GUIDToCommentMap comments)
-        {
-            if (val.Count == 0)
-            {
-                return;
-            }
-            else if (val.Count == 1)
-            {
-                sw.WriteLine(String.Format("\t\t\t\t{0} = {1};", PBXStream.QuoteStringIfNeeded(name), PBXStream.QuoteStringIfNeeded(val[0])));
-            }
-            else
-            {
-                sw.WriteLine(String.Format("\t\t\t\t{0} = (", PBXStream.QuoteStringIfNeeded(name)));
-                foreach (string s in val)
-                    sw.WriteLine(String.Format("\t\t\t\t\t{0},", PBXStream.QuoteStringIfNeeded(s)));
-                sw.WriteLine("\t\t\t\t);");
-            }
-        }
-
-        public void AddValue(string val)
-        {
-            this.val.Add(ExtractValue(val));
+            if (!val.Contains(value))
+                val.Add(value);
         }
 
         public static BuildConfigEntry FromNameValue(string name, string value)
@@ -653,94 +625,54 @@ namespace UnityEditor.iOS.Xcode
 
     internal class XCBuildConfiguration : PBXObject
     {
-        private static KnownProperties knownProps = new KnownProperties
+        protected SortedDictionary<string, BuildConfigEntry> entries = new SortedDictionary<string, BuildConfigEntry>();
+        public string name { get { return GetPropertyString("name"); } }
+
+        // Note that QuoteStringIfNeeded does its own escaping. Double-escaping with quotes is
+        // required to please Xcode that does not handle paths with spaces if they are not 
+        // enclosed in quotes.
+        static string EscapeWithQuotesIfNeeded(string name, string value)
         {
-            { "isa", PropertyType.Regular },
-            { "buildSettings", PropertyType.BuildPropertiesList },
-            { "name", PropertyType.Regular },
-        };
-
-        protected override KnownProperties knownProperties { get { return knownProps; } }
-
-        public SortedDictionary<string, BuildConfigEntry> entry = new SortedDictionary<string, BuildConfigEntry>();
-        public string name { get { return m_Properties["name"]; } }
-
-        protected string ReadBuildPropertiesListProperty(string curLine, TextReader sr)
-        {
-            if (curLine.Trim() != "buildSettings = {")
-                return curLine;
-            curLine = sr.ReadLine();
-            while (curLine.Trim() != "};")
-            {
-                BuildConfigEntry val = new BuildConfigEntry();
-                val.Read(curLine, sr);
-                entry[val.name] = val;
-
-                curLine = sr.ReadLine();
-            }
-            return curLine;
-        }
-
-        protected override string ReadProperty(PropertyType prop, string curLine, TextReader sr)
-        {
-            if (prop == PropertyType.Regular)
-                ReadRegularProperty(curLine);
-            else if (prop == PropertyType.CommentedGuid)
-                ReadCommentedGuidProperty(curLine);
-            else if (prop == PropertyType.BuildPropertiesList)
-                curLine = ReadBuildPropertiesListProperty(curLine, sr);
-            return curLine;
-        }
-
-        protected void WriteBuildPropertiesListProperty(string prop, TextWriter sw, GUIDToCommentMap comments)
-        {
-            sw.WriteLine("\t\t\tbuildSettings = {");
-            foreach(BuildConfigEntry e in entry.Values)
-                e.Write(sw, comments);
-            sw.WriteLine("\t\t\t};");
-        }
-
-        protected override void WriteProperty(PropertyType propType, string prop, TextWriter sw, GUIDToCommentMap comments)
-        {
-            if (propType == PropertyType.Regular)
-                WriteRegularProperty(prop, sw);
-            else if (propType == PropertyType.CommentedGuid)
-                WriteCommentedGuidProperty(prop, sw, comments);
-            else if (propType == PropertyType.BuildPropertiesList)
-                WriteBuildPropertiesListProperty(prop, sw, comments);
+            if (name != "LIBRARY_SEARCH_PATHS")
+                return value;
+            if (!value.Contains(" "))
+                return value;
+            if (value.First() == '\"' && value.Last() == '\"')
+                return value;
+            return "\"" + value + "\"";
         }
 
         public void SetProperty(string name, string value)
         {
-            entry[name] = BuildConfigEntry.FromNameValue(name, value);
+            entries[name] = BuildConfigEntry.FromNameValue(name, EscapeWithQuotesIfNeeded(name, value));
         }
 
         public void AddProperty(string name, string value)
         {
-            if (entry.ContainsKey(name))
-                entry[name].AddValue(value);
+            if (entries.ContainsKey(name))
+                entries[name].AddValue(EscapeWithQuotesIfNeeded(name, value));
             else
                 SetProperty(name, value);
         }
 
         public void UpdateProperties(string name, string[] addValues, string[] removeValues)
         {
-            if (entry.ContainsKey(name))
+            if (entries.ContainsKey(name))
             {
-                HashSet<string> valSet = new HashSet<string>(entry[name].val);
-
+                HashSet<string> valSet = new HashSet<string>(entries[name].val);
+                
                 if (removeValues != null)
-                    valSet.ExceptWith(removeValues);
+                {
+                    foreach (string val in removeValues)
+                        valSet.Remove(EscapeWithQuotesIfNeeded(name, val));
+                }
                 if (addValues != null)
-                    valSet.UnionWith(addValues);
-
-                entry[name].val = new List<string>(valSet);
+                {
+                    foreach (string val in addValues)
+                        valSet.Add(EscapeWithQuotesIfNeeded(name, val));
+                }
+                entries[name].val = new List<string>(valSet);
             }
-        }
-
-        protected override IEnumerable<string> GetPropertyNames()
-        {
-            return m_Properties.Keys.Concat(new List<string>{"buildSettings"});
         }
 
         // name should be either release or debug
@@ -748,90 +680,124 @@ namespace UnityEditor.iOS.Xcode
         {
             var res = new XCBuildConfiguration();
             res.guid = PBXGUID.Generate();
-            res.m_Properties["isa"] = "XCBuildConfiguration";
-            res.m_Properties["name"] = name;
+            res.SetPropertyString("isa", "XCBuildConfiguration");
+            res.SetPropertyString("name", name);
             return res;
         }
-    }
-
-    internal class PBXContainerItemProxy : GUIDListBase
-    {
-        protected override string mainListName { get { return "none"; } }
-
-        private static KnownProperties knownProps = new KnownProperties
+        
+        public override void UpdateProps()
         {
-            { "isa", PropertyType.Regular },
-            { "containerPortal", PropertyType.CommentedGuid }, // guid
-            { "proxyType", PropertyType.Regular },
-            { "remoteGlobalIDString", PropertyType.Regular },
-            { "remoteInfo", PropertyType.Regular },
-        };
-
-        protected override KnownProperties knownProperties { get { return knownProps; } }
-
+            var dict = m_Properties.CreateDict("buildSettings");
+            foreach (var kv in entries)
+            {
+                if (kv.Value.val.Count == 0)
+                    continue;
+                else if (kv.Value.val.Count == 1)
+                    dict.SetString(kv.Key, kv.Value.val[0]);
+                else  // kv.Value.val.Count > 1
+                {
+                    var array = dict.CreateArray(kv.Key);
+                    foreach (var value in kv.Value.val)
+                        array.AddString(value);
+                }
+            }
+        }
+        public override void UpdateVars()
+        {
+            entries = new SortedDictionary<string, BuildConfigEntry>();
+            if (m_Properties.Contains("buildSettings"))
+            {
+                var dict = m_Properties["buildSettings"].AsDict();
+                foreach (var key in dict.values.Keys)
+                {
+                    var value = dict[key];
+                    if (value is PBXElementString)
+                    {
+                        if (entries.ContainsKey(key))
+                            entries[key].val.Add(value.AsString());
+                        else
+                            entries.Add(key, BuildConfigEntry.FromNameValue(key, value.AsString()));
+                    }
+                    else if (value is PBXElementArray)
+                    {
+                        foreach (var pvalue in value.AsArray().values)
+                        {
+                            if (pvalue is PBXElementString)
+                            {
+                                if (entries.ContainsKey(key))
+                                    entries[key].val.Add(pvalue.AsString());
+                                else
+                                    entries.Add(key, BuildConfigEntry.FromNameValue(key, pvalue.AsString()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    internal class PBXContainerItemProxy : PBXObject
+    {
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "containerPortal/*"
+        });
+        
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
+        
         public static PBXContainerItemProxy Create(string containerRef, string proxyType,
                                                    string remoteGlobalGUID, string remoteInfo)
         {
             var res = new PBXContainerItemProxy();
             res.guid = PBXGUID.Generate();
-            res.m_Properties["isa"] = "PBXContainerItemProxy";
-            res.m_Properties["containerPortal"] = containerRef;
-            res.m_Properties["proxyType"] = proxyType;
-            res.m_Properties["remoteGlobalIDString"] = remoteGlobalGUID;
-            res.m_Properties["remoteInfo"] = remoteInfo;
+            res.SetPropertyString("isa", "PBXContainerItemProxy");
+            res.SetPropertyString("containerPortal", containerRef);
+            res.SetPropertyString("proxyType", proxyType);
+            res.SetPropertyString("remoteGlobalIDString", remoteGlobalGUID);
+            res.SetPropertyString("remoteInfo", remoteInfo);
             return res;
         }
     }
 
-    internal class PBXReferenceProxy : GUIDListBase
+    internal class PBXReferenceProxy : PBXObject
     {
-        protected override string mainListName { get { return "none"; } }
-
-        private static KnownProperties knownProps = new KnownProperties
-        {
-            { "isa", PropertyType.Regular },
-            { "path", PropertyType.Regular },
-            { "fileType", PropertyType.Regular },
-            { "sourceTree", PropertyType.Regular },
-            { "remoteRef", PropertyType.CommentedGuid }, // guid
-        };
-
-        protected override KnownProperties knownProperties { get { return knownProps; } }
-
-        public string path { get { return m_Properties["path"]; } }
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "remoteRef/*"
+        });
+        
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
+        
+        public string path { get { return GetPropertyString("path"); } }
 
         public static PBXReferenceProxy Create(string path, string fileType,
                                                string remoteRef, string sourceTree)
         {
             var res = new PBXReferenceProxy();
             res.guid = PBXGUID.Generate();
-            res.m_Properties["isa"] = "PBXReferenceProxy";
-            res.m_Properties["path"] = path;
-            res.m_Properties["fileType"] = fileType;
-            res.m_Properties["remoteRef"] = remoteRef;
-            res.m_Properties["sourceTree"] = sourceTree;
+            res.SetPropertyString("isa", "PBXReferenceProxy");
+            res.SetPropertyString("path", path);
+            res.SetPropertyString("fileType", fileType);
+            res.SetPropertyString("remoteRef", remoteRef);
+            res.SetPropertyString("sourceTree", sourceTree);
             return res;
         }
     }
-
+    
     internal class PBXTargetDependency : PBXObject
     {
-        private static KnownProperties knownProps = new KnownProperties
-        {
-            { "isa", PropertyType.Regular },
-            { "target", PropertyType.CommentedGuid },
-            { "targetProxy", PropertyType.CommentedGuid }
-        };
-
-        protected override KnownProperties knownProperties { get { return knownProps; } }
-
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "target/*",
+            "targetProxy/*"
+        });
+        
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
+        
         public static PBXTargetDependency Create(string target, string targetProxy)
         {
             var res = new PBXTargetDependency();
             res.guid = PBXGUID.Generate();
-            res.m_Properties["isa"] = "PBXTargetDependency";
-            res.m_Properties["target"] = target;
-            res.m_Properties["targetProxy"] = targetProxy;
+            res.SetPropertyString("isa", "PBXTargetDependency");
+            res.SetPropertyString("target", target);
+            res.SetPropertyString("targetProxy", targetProxy);
             return res;
         }
     }
@@ -848,168 +814,63 @@ namespace UnityEditor.iOS.Xcode
             res.projectRef = projectRef;
             return res;
         }
-
-        public void Read(string curLine, TextReader sr)
-        {
-            if (curLine.Trim() != "{")
-                throw new Exception("Wrong entry passed to ProjectReference.Read");
-
-            curLine = sr.ReadLine();
-            while (curLine.Trim() != "}" && curLine.Trim() != "},") 
-            {
-                Match m = PBXRegex.KeyValue.Match(curLine.Trim());
-                if (m.Success)
-                {
-                    string key = m.Groups[1].Value;
-                    string value = m.Groups[2].Value;
-
-                    if (key == "ProductGroup")
-                        group = CommentedGUID.ReadString(value);
-                    else if (key == "ProjectRef")
-                        projectRef = CommentedGUID.ReadString(value);
-                }
-                curLine = sr.ReadLine();
-            }
-        }
-
-        public void Write(TextWriter sw, GUIDToCommentMap comments)
-        {
-            sw.WriteLine("\t\t\t\t{");
-            sw.WriteLine(String.Format("\t\t\t\t\tProductGroup = {0};", CommentedGUID.Write(group, comments)));
-            sw.WriteLine(String.Format("\t\t\t\t\tProjectRef = {0};", CommentedGUID.Write(projectRef, comments)));
-            sw.WriteLine("\t\t\t\t},");
-        }
     }
 
-    internal class PBXProjectObject : GUIDListBase
+    internal class PBXProjectObject : PBXObject
     {
-        protected override string mainListName { get { return "targets"; } }
-
-        private static KnownProperties knownProps = new KnownProperties
-        {
-            { "isa", PropertyType.Regular },
-            { "attributes", PropertyType.ProjectAttributeList },
-            { "buildConfigurationList", PropertyType.CommentedGuid },
-            { "compatibilityVersion", PropertyType.Regular },
-            { "developmentRegion", PropertyType.Regular },
-            { "hasScannedForEncodings", PropertyType.Regular },
-            { "knownRegions", PropertyType.RegularList },
-            { "mainGroup", PropertyType.CommentedGuid },
-            { "projectDirPath", PropertyType.Regular },
-            { "projectRoot", PropertyType.Regular },
-            { "targets", PropertyType.CommentedGuidList },
-            { "projectReferences", PropertyType.ProjectReferenceList },
-        };
-
-        protected override KnownProperties knownProperties { get { return knownProps; } }
+        private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
+            "buildConfigurationList/*",
+            "mainGroup/*",
+            "projectReferences/*/ProductGroup/*",
+            "projectReferences/*/ProjectRef/*",
+            "targets/*"
+        });
+        
+        internal override PropertyCommentChecker checker { get { return checkerData; } }
 
         public List<ProjectReference> projectReferences = new List<ProjectReference>();
-        protected List<string> m_AttributeLines = new List<string>();
-        public string mainGroup { get { return m_Properties["mainGroup"]; } }
-        public List<string> targets { get { return m_ListProperties["targets"]; } }
-        public string buildConfigList { get { return m_Properties["buildConfigurationList"]; }
-                                        set { m_Properties["buildConfigurationList"] = value; } }
-
-        protected string ReadProjectAttributeProperty(string curLine, TextReader sr)
-        {
-            if (!curLine.Contains("= {"))
-                return curLine;
-
-            m_AttributeLines.Clear();
-            m_AttributeLines.Add(curLine);
-            int nesting = 1;
-
-            while (nesting > 0) 
-            {
-                curLine = sr.ReadLine();
-                if (curLine.Contains("= {"))
-                    nesting += 1;
-                else if (curLine.Trim() == "};")
-                    nesting -= 1;
-                m_AttributeLines.Add(curLine);
-            }
-            return curLine;
-        }
-
-        protected string ReadProjectReferenceList(string curLine, TextReader sr)
-        {
-            if (curLine.Trim() != "projectReferences = (")
-                return curLine;
-            curLine = sr.ReadLine();
-
-            while (curLine.Trim() != ");")
-            {
-                if (curLine.Trim() == "{")
-                {
-                    var newRef = new ProjectReference();
-                    newRef.Read(curLine, sr);
-                    projectReferences.Add(newRef);
-                }
-                curLine = sr.ReadLine();
-            }
-            return curLine;
-        }
-
-        protected override string ReadProperty(PropertyType prop, string curLine, TextReader sr)
-        {
-            if (prop == PropertyType.Regular)
-                ReadRegularProperty(curLine);
-            else if (prop == PropertyType.CommentedGuid)
-                ReadCommentedGuidProperty(curLine);
-            else if (prop == PropertyType.RegularList)
-                curLine = ReadRegularListProperty(curLine, sr);
-            else if (prop == PropertyType.CommentedGuidList)
-                curLine = ReadCommentedGuidListProperty(curLine, sr);
-            else if (prop == PropertyType.ProjectAttributeList)
-                curLine = ReadProjectAttributeProperty(curLine, sr);
-            else if (prop == PropertyType.ProjectReferenceList)
-                curLine = ReadProjectReferenceList(curLine, sr);
-            return curLine;
-        }
-
-        protected void WriteProjectAttributeListProperty(string prop, TextWriter sw, GUIDToCommentMap comments)
-        {
-            foreach (string line in m_AttributeLines)
-                sw.WriteLine(line);
-        }
-
-        protected void WriteProjectReferenceListProperty(string prop, TextWriter sw, GUIDToCommentMap comments)
-        {
-            if (projectReferences.Count == 0)
-                return;
-
-            sw.WriteLine("\t\t\tprojectReferences = (");
-            foreach (var projRef in projectReferences)
-            {
-                projRef.Write(sw, comments);
-            }
-            sw.WriteLine("\t\t\t);");
-        }
-
-        protected override void WriteProperty(PropertyType propType, string prop, TextWriter sw, GUIDToCommentMap comments)
-        {
-            if (propType == PropertyType.Regular)
-                WriteRegularProperty(prop, sw);
-            else if (propType == PropertyType.CommentedGuid)
-                WriteCommentedGuidProperty(prop, sw, comments);
-            else if (propType == PropertyType.RegularList)
-                WriteRegularListProperty(prop, sw);
-            else if (propType == PropertyType.CommentedGuidList)
-                WriteCommentedGuidListProperty(prop, sw, comments);
-            else if (propType == PropertyType.ProjectAttributeList)
-                WriteProjectAttributeListProperty(prop, sw, comments);
-            else if (propType == PropertyType.ProjectReferenceList)
-                WriteProjectReferenceListProperty(prop, sw, comments);
-        }
-
-        protected override IEnumerable<string> GetPropertyNames()
-        {
-            return m_Properties.Keys.Concat(m_ListProperties.Keys).Concat(new List<string>{"projectReferences", "attributes"});
-        }
+        public string mainGroup { get { return GetPropertyString("mainGroup"); } }
+        public List<string> targets { get { return GetPropertyList("targets"); } }
+        public string buildConfigList;
 
         public void AddReference(string productGroup, string projectRef)
         {
             projectReferences.Add(ProjectReference.Create(productGroup, projectRef));
+        }
+        
+        public override void UpdateProps()
+        {
+            m_Properties.values.Remove("projectReferences");
+            if (projectReferences.Count > 0)
+            {
+                var array = m_Properties.CreateArray("projectReferences");
+                foreach (var value in projectReferences)
+                {
+                    var dict = array.AddDict();
+                    dict.SetString("ProductGroup", value.group);
+                    dict.SetString("ProjectRef", value.projectRef);
+                }
+            };
+            SetPropertyString("buildConfigurationList", buildConfigList);
+        }
+        public override void UpdateVars()
+        {
+            projectReferences = new List<ProjectReference>();
+            if (m_Properties.Contains("projectReferences"))
+            {
+                var el = m_Properties["projectReferences"].AsArray();
+                foreach (var value in el.values)
+                {
+                    PBXElementDict dict = value.AsDict();
+                    if (dict.Contains("ProductGroup") && dict.Contains("ProjectRef"))
+                    {
+                        string group = dict["ProductGroup"].AsString();
+                        string projectRef = dict["ProjectRef"].AsString();
+                        projectReferences.Add(ProjectReference.Create(group, projectRef));
+                    }
+                }
+            }
+            buildConfigList = GetPropertyString("buildConfigurationList");
         }
     }
 

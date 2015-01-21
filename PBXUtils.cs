@@ -5,24 +5,6 @@ using System.IO;
 
 namespace UnityEditor.iOS.Xcode
 {
-
-    internal class CommentedGUID
-    {
-        public static string ReadString(string line)
-        {
-            Match m = PBXRegex.GUID.Match(line);
-            return m.Groups[1].Value;
-        }
-
-        public static string Write(string guid, GUIDToCommentMap comments)
-        {
-            string comment = comments[guid];
-            if (comment == null)
-                return guid;
-            return String.Format("{0} /* {1} */", guid, comment);
-        }
-    }
-
     internal class GUIDToCommentMap
     {
         private Dictionary<string, string> m_Dict = new Dictionary<string, string>();
@@ -46,6 +28,14 @@ namespace UnityEditor.iOS.Xcode
         public void Remove(string guid)
         {
             m_Dict.Remove(guid);
+        }
+        
+        public string Write(string guid)
+        {
+            string comment = this[guid];
+            if (comment == null)
+                return guid;
+            return String.Format("{0} /* {1} */", guid, comment);
         }
     }
 
@@ -76,46 +66,17 @@ namespace UnityEditor.iOS.Xcode
     internal class PBXRegex
     {
         public static string GuidRegexString = "[A-Fa-f0-9]{24}";
-        private static string CommentRegexString = "/\\*\\s+([^\\*]+)\\s+\\*/";
-
-        public static Regex BeginSection    = new Regex("^/\\* Begin (\\w+) section \\*/$");
-        public static Regex EndSection      = new Regex("^/\\* End (\\w+) section \\*/$");
-
-        public static Regex GUID            = new Regex(String.Format("({0})", GuidRegexString));
-        public static Regex GUIDComment     = new Regex(String.Format("({0}) {1}", GuidRegexString, CommentRegexString));
-        public static Regex Key             = new Regex("(\\w+) = ");
-        public static Regex KeyValue        = new Regex("(\\S+) = ([^;]+);$");
-        public static Regex AnyKeyValue     = new Regex("([^=]+) = (.*);$");
-        public static Regex ListHeader      = new Regex("(\\w+) = \\($");
-
-        public static Regex BuildFile       = new Regex(String.Format("({0}).*fileRef = ({1})[^;]*; (.*)\\}};", GuidRegexString, GuidRegexString));
-        public static Regex FileRef         = new Regex(String.Format("({0}).*path = ([^;]+)", GuidRegexString));
-        public static Regex FileRefName     = new Regex(String.Format("name = ([^;]+)"));
-
-        public static Regex DontNeedQuotes  = new Regex("^[\\w\\d\\./]+$");
-
-        public static string ExtractGUID(string s)
-        {
-            return GUID.Match(s).Value;
-        }
+        public static Regex DontNeedQuotes  = new Regex("^[\\w\\d\\./_*]+$");
     }
 
     internal class PBXStream
     {
-        public static string ReadSkippingEmptyLines(TextReader sr)
-        {
-            string line = sr.ReadLine();
-            while (String.IsNullOrEmpty(line))
-                line = sr.ReadLine();
-
-            return line;
-        }
-
         // Quotes the given string if it contains special characters. Note: if the string already
         // contains quotes, then they are escaped and the entire string quoted again
         public static string QuoteStringIfNeeded(string src)
         {
-            if (PBXRegex.DontNeedQuotes.IsMatch(src))
+            if (PBXRegex.DontNeedQuotes.IsMatch(src) && 
+                !src.Contains("//") && !src.Contains("/*") && !src.Contains("*/"))
                 return src;
             return "\"" + src.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n") + "\"";
         }
@@ -128,35 +89,6 @@ namespace UnityEditor.iOS.Xcode
             return src.Substring(1, src.Length - 2).Replace("\\\\", "\u569f").Replace("\\\"", "\"")
                                                    .Replace("\\n", "\n").Replace("\u569f", "\\"); // U+569f is a rarely used Chinese character
         }
-
-        public delegate bool    ConditionOnString(string s);
-        public delegate string  ProcessString(string s);
-        public static void ReadLinesWithConditionForLastLine(TextReader sr, List<string> list, ConditionOnString cond)
-        {
-            string line;
-            do
-            {
-                line = sr.ReadLine();
-                list.Add(line);
-            }
-            while(!cond(line));
-        }
-        public static string ReadLinesUntilConditionIsMet(TextReader sr, List<string> list, ProcessString proc, ConditionOnString cond)
-        {
-            string line = sr.ReadLine();
-            while (!cond(line))
-            {
-                list.Add(proc(line));
-                line = sr.ReadLine();
-            }
-            return line;
-        }
-
-        public static void ReadLinesFromFile(TextReader sr, List<string> list)
-        {
-            while (sr.Peek() != -1)
-                list.Add(sr.ReadLine());
-        }
     }
 
     internal enum PBXFileType
@@ -168,16 +100,6 @@ namespace UnityEditor.iOS.Xcode
         CopyFile
     }
 
-    public enum PBXSourceTree
-    {
-        Absolute,
-        Group,
-        Build,
-        Developer,
-        Sdk,
-        Source
-    };
-
     internal class FileTypeUtils
     {
         internal class FileTypeDesc
@@ -186,17 +108,26 @@ namespace UnityEditor.iOS.Xcode
             {
                 this.name = typeName;
                 this.type = type;
+                this.isExplicit = false;
+            }
+
+            public FileTypeDesc(string typeName, PBXFileType type, bool isExplicit)
+            {
+                this.name = typeName;
+                this.type = type;
+                this.isExplicit = isExplicit;
             }
 
             public string name;
             public PBXFileType type;
+            public bool isExplicit;
         }
 
         private static readonly Dictionary<string, FileTypeDesc> types =
             new Dictionary<string, FileTypeDesc>
         {
             { ".a",         new FileTypeDesc("archive.ar",              PBXFileType.Framework) },
-            { ".app",       new FileTypeDesc("wrapper.application",     PBXFileType.NotBuildable) },
+            { ".app",       new FileTypeDesc("wrapper.application",     PBXFileType.NotBuildable, true) },
             { ".appex",     new FileTypeDesc("wrapper.app-extension",   PBXFileType.CopyFile) },
             { ".s",         new FileTypeDesc("sourcecode.asm",          PBXFileType.Source) },
             { ".c",         new FileTypeDesc("sourcecode.c.c",          PBXFileType.Source) },
@@ -231,6 +162,13 @@ namespace UnityEditor.iOS.Xcode
             return types.ContainsKey(ext);
         }
 
+        internal static bool IsFileTypeExplicit(string ext)
+        {
+            if (types.ContainsKey(ext))
+                return types[ext].isExplicit;
+            return false;
+        }
+
         public static PBXFileType GetFileType(string ext)
         {
             if (types.ContainsKey(ext))
@@ -261,15 +199,33 @@ namespace UnityEditor.iOS.Xcode
             { PBXSourceTree.Sdk,        "SDKROOT" },
             { PBXSourceTree.Source,     "SOURCE_ROOT" },
         };
+        
+        private static readonly Dictionary<string, PBXSourceTree> stringToSourceTreeMap = new Dictionary<string, PBXSourceTree> 
+        {
+            { "<absolute>",         PBXSourceTree.Absolute },
+            { "<group>",            PBXSourceTree.Group },
+            { "BUILT_PRODUCTS_DIR", PBXSourceTree.Build },
+            { "DEVELOPER_DIR",      PBXSourceTree.Developer },
+            { "SDKROOT",            PBXSourceTree.Sdk },
+            { "SOURCE_ROOT",        PBXSourceTree.Source },
+        };
 
         internal static string SourceTreeDesc(PBXSourceTree tree)
         {
             return sourceTree[tree];
         }
-
-        internal static List<PBXSourceTree> AllSourceTrees()
+        
+        // returns PBXSourceTree.Source on error
+        internal static PBXSourceTree ParseSourceTree(string tree)
         {
-            return new List<PBXSourceTree>{PBXSourceTree.Absolute, PBXSourceTree.Group, PBXSourceTree.Build,
+            if (stringToSourceTreeMap.ContainsKey(tree))
+                return stringToSourceTreeMap[tree];
+            return PBXSourceTree.Source;
+        }
+
+        internal static List<PBXSourceTree> AllAbsoluteSourceTrees()
+        {
+            return new List<PBXSourceTree>{PBXSourceTree.Absolute, PBXSourceTree.Build,
                                            PBXSourceTree.Developer, PBXSourceTree.Sdk, PBXSourceTree.Source};
         }
     }

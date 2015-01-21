@@ -34,6 +34,9 @@
     <Compile Include="PBXUtils.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="PlistParser.cs" />
+    <Compile Include="Lexer.cs" />
+    <Compile Include="Parser.cs" />
+    <Compile Include="Serializer.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ItemGroup>
