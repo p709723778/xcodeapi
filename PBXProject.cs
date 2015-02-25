@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.IO;
 using System;
+using UnityEditor.iOS.Xcode.PBX;
 
 namespace UnityEditor.iOS.Xcode
 {
@@ -1070,11 +1071,13 @@ namespace UnityEditor.iOS.Xcode
                 m_RootElements.Remove("objectVersion");
             }
 
+            var allGuids = new List<string>();
             string prevSectionName = null;
             foreach (var kv in objects.values)
             {
+                allGuids.Add(kv.Key);
                 var el = kv.Value;
-                
+
                 if (!(el is PBXElementDict) || !el.AsDict().Contains("isa"))
                 {
                     m_UnknownObjects.values.Add(kv.Key, el);
@@ -1116,6 +1119,7 @@ namespace UnityEditor.iOS.Xcode
                 }
                 prevSectionName = sectionName;
             }
+            RepairStructure(allGuids);
             RefreshAuxMaps();
         }
 
@@ -1160,6 +1164,125 @@ namespace UnityEditor.iOS.Xcode
             
             content = content.Replace("objects = OBJMARKER;", objectsSb.ToString());
             return content;
+        }
+        
+        // This method walks the project structure and removes invalid entries.
+        void RepairStructure(List<string> allGuids)
+        {
+            var guidSet = new Dictionary<string, bool>(); // emulate HashSet on .Net 2.0
+            foreach (var guid in allGuids)
+                guidSet.Add(guid, false);
+            
+            while (RepairStructureImpl(guidSet) == false)
+                ;
+        }
+
+        static void RepairStructureRemoveMissingGuids(PBX.GUIDList guidList, Dictionary<string, bool> allGuids)
+        {
+            List<string> guidsToRemove = null;
+            foreach (var guid in guidList)
+            {
+                if (!allGuids.ContainsKey(guid))
+                {
+                    if (guidsToRemove == null)
+                        guidsToRemove = new List<string>();
+                    guidsToRemove.Add(guid);
+                }
+            }
+            if (guidsToRemove != null)
+            {
+                foreach (var guid in guidsToRemove)
+                    guidList.RemoveGUID(guid);
+            }
+        }
+        
+        static void RepairStructureAnyType<T>(KnownSectionBase<T> section, 
+                                              Func<T, bool> checker,
+                                              Dictionary<string, bool> allGuids, ref bool ok) where T : PBXObject, new()
+        {
+            List<string> guidsToRemove = null;
+            foreach (var kv in section.entries)
+            {
+                if (!checker(kv.Value))
+                {
+                    if (guidsToRemove == null)
+                        guidsToRemove = new List<string>();
+                    guidsToRemove.Add(kv.Key);
+                }
+            }
+            if (guidsToRemove != null)
+            {
+                ok = false;
+                foreach (var guid in guidsToRemove)
+                {
+                    section.RemoveEntry(guid);
+                    allGuids.Remove(guid);
+                }
+            }
+        }
+        
+        static void RepairStructureGuidList<T>(KnownSectionBase<T> section, 
+                                               Func<T, PBX.GUIDList> listRetrieveFunc,
+                                               Dictionary<string, bool> allGuids, ref bool ok) where T : PBXObject, new()
+        {
+            Func<T, bool> checker = (T obj) =>
+            {
+                var list = listRetrieveFunc(obj);
+                if (list == null)
+                    return false;
+                RepairStructureRemoveMissingGuids(list, allGuids);
+                return true;
+            };
+            RepairStructureAnyType(section, checker, allGuids, ref ok);
+        }
+
+        // Returns true if repair was successful
+        bool RepairStructureImpl(Dictionary<string, bool> allGuids)
+        {
+            bool ok = true;
+            
+            // PBXBuildFile
+            Func<PBXBuildFile, bool> buildFilesChecker = (PBXBuildFile obj) =>
+            {
+                if (obj.fileRef == null || !allGuids.ContainsKey(obj.fileRef))
+                    return false;
+                return true;
+            };
+            RepairStructureAnyType(buildFiles, buildFilesChecker, allGuids, ref ok);
+            // PBXFileReference / fileRefs not cleaned
+            
+            // PBXGroup
+            RepairStructureGuidList(groups, o => o.children, allGuids, ref ok);
+            
+            // PBXContainerItem / containerItems not cleaned
+            // PBXReferenceProxy / references not cleaned
+            
+            // PBXSourcesBuildPhase
+            RepairStructureGuidList(sources, o => o.files, allGuids, ref ok); 
+            // PBXFrameworksBuildPhase
+            RepairStructureGuidList(frameworks, o => o.files, allGuids, ref ok); 
+            // PBXResourcesBuildPhase
+            RepairStructureGuidList(resources, o => o.files, allGuids, ref ok); 
+            // PBXCopyFilesBuildPhase
+            RepairStructureGuidList(copyFiles, o => o.files, allGuids, ref ok); 
+            // PBXShellScriptsBuildPhase
+            RepairStructureGuidList(shellScripts, o => o.files, allGuids, ref ok); 
+ 
+            // PBXNativeTarget
+            RepairStructureGuidList(nativeTargets, o => o.phases, allGuids, ref ok);
+
+            // PBXTargetDependency / targetDependencies not cleaned
+            
+            // PBXVariantGroup
+            RepairStructureGuidList(variantGroups, o => o.children, allGuids, ref ok);
+            
+            // XCBuildConfiguration / buildConfigs not cleaned
+
+            // XCConfigurationList
+            RepairStructureGuidList(configs, o => o.buildConfigs, allGuids, ref ok);
+            
+            // PBXProject project not cleaned
+            return ok;
         }
     }
 

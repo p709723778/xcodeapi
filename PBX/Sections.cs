@@ -6,7 +6,7 @@ using System.IO;
 
 // Basr classes for section handling
 
-namespace UnityEditor.iOS.Xcode
+namespace UnityEditor.iOS.Xcode.PBX
 {
 
     // common base

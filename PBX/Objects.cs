@@ -6,7 +6,7 @@ using System.Linq;
 using System;
 
 
-namespace UnityEditor.iOS.Xcode
+namespace UnityEditor.iOS.Xcode.PBX
 {
     
     class PBXElement
@@ -750,9 +750,9 @@ namespace UnityEditor.iOS.Xcode
             var res = new PBXContainerItemProxy();
             res.guid = PBXGUID.Generate();
             res.SetPropertyString("isa", "PBXContainerItemProxy");
-            res.SetPropertyString("containerPortal", containerRef);
+            res.SetPropertyString("containerPortal", containerRef); // guid
             res.SetPropertyString("proxyType", proxyType);
-            res.SetPropertyString("remoteGlobalIDString", remoteGlobalGUID);
+            res.SetPropertyString("remoteGlobalIDString", remoteGlobalGUID); // guid
             res.SetPropertyString("remoteInfo", remoteInfo);
             return res;
         }

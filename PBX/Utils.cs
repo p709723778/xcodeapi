@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.IO;
 
-namespace UnityEditor.iOS.Xcode
+namespace UnityEditor.iOS.Xcode.PBX
 {
     internal class GUIDToCommentMap
     {
@@ -139,6 +139,7 @@ namespace UnityEditor.iOS.Xcode
             { ".h",         new FileTypeDesc("sourcecode.c.h",          PBXFileType.NotBuildable) },
             { ".pch",       new FileTypeDesc("sourcecode.c.h",          PBXFileType.NotBuildable) },
             { ".icns",      new FileTypeDesc("image.icns",              PBXFileType.Resource) },
+            { ".xcassets",  new FileTypeDesc("folder.assetcatalog",     PBXFileType.Resource) },
             { ".inc",       new FileTypeDesc("sourcecode.inc",          PBXFileType.NotBuildable) },
             { ".m",         new FileTypeDesc("sourcecode.c.objc",       PBXFileType.Source) },
             { ".mm",        new FileTypeDesc("sourcecode.cpp.objcpp",   PBXFileType.Source ) },

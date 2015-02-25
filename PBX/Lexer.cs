@@ -5,7 +5,7 @@ using System.Linq;
 using System;
 
 
-namespace UnityEditor.iOS.Xcode
+namespace UnityEditor.iOS.Xcode.PBX
 {
     enum TokenType
     {
@@ -76,11 +76,6 @@ namespace UnityEditor.iOS.Xcode
             return tokens;
         }
         
-        bool IsValidStringChar(char ch)
-        {
-            return Char.IsLetterOrDigit(ch) || ch == '.' || ch == '_' || ch == '/' ; // must correspond to PBXRegex.DontNeedQuotes
-        }
-        
         void UpdateNewlineStats(char ch)
         {
             if (ch == '\n')
@@ -114,12 +109,10 @@ namespace UnityEditor.iOS.Xcode
                     ScanMultilineComment(tok);
                 else if (ch == '/' && ch2 == '/')
                     ScanComment(tok);
-                else if (IsValidStringChar(ch))
-                    ScanString(tok);
-                else if (ScanOperator(tok))
-                    return; // scanned
-                else // invalid character; we might simply continue at this point
-                    throw new Exception("Invalid PBX project (parsing line " + line + ")");
+                else if (IsOperator(ch))
+                    ScanOperator(tok);
+                else
+                    ScanString(tok); // be more robust and accept whatever is left
                 return;
             }    
         }
@@ -128,8 +121,23 @@ namespace UnityEditor.iOS.Xcode
         {
             tok.type = TokenType.String;
             tok.begin = pos;
-            while (pos < length && IsValidStringChar(text[pos]))
+            while (pos < length)
+            {
+                char ch = text[pos];
+                char ch2 = text[pos+1];
+                
+                if (Char.IsWhiteSpace(ch))
+                    break;
+                else if (ch == '\"')
+                    break;
+                else if (ch == '/' && ch2 == '*')
+                    break;
+                else if (ch == '/' && ch2 == '/')
+                    break;
+                else if (IsOperator(ch))
+                    break;
                 pos++;
+            }
             tok.end = pos;
             tok.line = line;
         }
@@ -150,11 +158,12 @@ namespace UnityEditor.iOS.Xcode
                 }
             
                 // note that we close unclosed quotes
-                if (text[pos] == '\n' || text[pos] == '\"')
+                if (text[pos] == '\"')
                     break;
+                
+                UpdateNewlineStats(text[pos]);
                 pos++;
             }
-            UpdateNewlineStats(text[pos]);
             pos++;
             tok.end = pos;
             tok.line = line;
@@ -198,29 +207,35 @@ namespace UnityEditor.iOS.Xcode
             tok.line = line;
         }
         
-        bool ScanOperator(Token tok)
+        bool IsOperator(char ch)
+        {
+            if (";,=(){}".Contains(ch))
+                return true;
+            return false;
+        }
+
+        void ScanOperator(Token tok)
         {
             switch (text[pos])
             {
-                case ';': return ScanOperatorSpecific(tok, TokenType.Semicolon);
-                case ',': return ScanOperatorSpecific(tok, TokenType.Comma);
-                case '=': return ScanOperatorSpecific(tok, TokenType.Eq);
-                case '(': return ScanOperatorSpecific(tok, TokenType.LParen);
-                case ')': return ScanOperatorSpecific(tok, TokenType.RParen);
-                case '{': return ScanOperatorSpecific(tok, TokenType.LBrace);
-                case '}': return ScanOperatorSpecific(tok, TokenType.RBrace);
-                default: return false;
-            } 
+                case ';': ScanOperatorSpecific(tok, TokenType.Semicolon); return;
+                case ',': ScanOperatorSpecific(tok, TokenType.Comma); return;
+                case '=': ScanOperatorSpecific(tok, TokenType.Eq); return;
+                case '(': ScanOperatorSpecific(tok, TokenType.LParen); return;
+                case ')': ScanOperatorSpecific(tok, TokenType.RParen); return;
+                case '{': ScanOperatorSpecific(tok, TokenType.LBrace); return;
+                case '}': ScanOperatorSpecific(tok, TokenType.RBrace); return;
+                default: return;
+            }
         }
         
-        bool ScanOperatorSpecific(Token tok, TokenType type)
+        void ScanOperatorSpecific(Token tok, TokenType type)
         {
             tok.type = type;
             tok.begin = pos;
             pos++;
             tok.end = pos;
             tok.line = line;
-            return true;
         }
     }
     

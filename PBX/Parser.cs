@@ -5,7 +5,7 @@ using System.Linq;
 using System;
 
 
-namespace UnityEditor.iOS.Xcode
+namespace UnityEditor.iOS.Xcode.PBX
 {   
 
     class ValueAST {}
