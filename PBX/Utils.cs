@@ -129,6 +129,7 @@ namespace UnityEditor.iOS.Xcode.PBX
             { ".a",         new FileTypeDesc("archive.ar",              PBXFileType.Framework) },
             { ".app",       new FileTypeDesc("wrapper.application",     PBXFileType.NotBuildable, true) },
             { ".appex",     new FileTypeDesc("wrapper.app-extension",   PBXFileType.CopyFile) },
+            { ".bin",       new FileTypeDesc("archive.macbinary",       PBXFileType.Resource) },
             { ".s",         new FileTypeDesc("sourcecode.asm",          PBXFileType.Source) },
             { ".c",         new FileTypeDesc("sourcecode.c.c",          PBXFileType.Source) },
             { ".cc",        new FileTypeDesc("sourcecode.cpp.cpp",      PBXFileType.Source) },
