@@ -45,11 +45,25 @@ namespace UnityEditor.iOS.Xcode.Custom
         public int value;
     }
 
+    public class PlistElementReal : PlistElement
+    {
+        public PlistElementReal(float v) { value = v; }
+
+        public float value;
+    }
+
     public class PlistElementBoolean : PlistElement
     {
         public PlistElementBoolean(bool v) { value = v; }
 
         public bool value;
+    }
+
+    public class PlistElementDate : PlistElement
+    {
+        public PlistElementDate(DateTime date) { value = date; }
+
+        public DateTime value;
     }
 
     public class PlistElementDict : PlistElement
@@ -203,7 +217,7 @@ namespace UnityEditor.iOS.Xcode.Custom
                     for (int i = 0; i < children.Count - 1; i++)
                     {
                         if (children[i].Name != "key")
-                            throw new Exception("Malformed plist file");
+                            throw new Exception("Malformed plist file. Found '"+children[i].Name+"' where 'key' was expected.");
                         string key = GetText(children[i]).Trim();
                         var newChild = ReadElement(children[i+1]);
                         if (newChild != null)
@@ -234,6 +248,20 @@ namespace UnityEditor.iOS.Xcode.Custom
                     int r;
                     if (int.TryParse(GetText(xml), out r))
                         return new PlistElementInteger(r);
+                    return null;
+                }
+                case "real":
+                {
+                    float f;
+                    if (float.TryParse(GetText(xml), out f))
+                        return new PlistElementReal(f);
+                    return null;
+                }
+                case "date":
+                {
+                    DateTime date;
+                    if (DateTime.TryParse(GetText(xml), out date))
+                        return new PlistElementDate(date);
                     return null;
                 }
                 case "true":
