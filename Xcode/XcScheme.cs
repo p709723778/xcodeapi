@@ -64,7 +64,7 @@ namespace UnityEditor.iOS.Xcode.Custom
 
         public string WriteToString()
         {
-            return PlistDocument.CleanDtdToString(m_Doc).Replace("\r\n", "\n");
+            return PlistDocument.CleanDtdToString(m_Doc, null).Replace("\r\n", "\n");
         }        
     }
 

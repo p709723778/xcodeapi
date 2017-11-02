@@ -168,6 +168,8 @@ namespace UnityEditor.iOS.Xcode.Custom
         public PlistElementDict root;
         public string version;
 
+        private XDocumentType documentType;
+
         public PlistDocument()
         {
             root = new PlistElementDict();
@@ -188,17 +190,17 @@ namespace UnityEditor.iOS.Xcode.Custom
         // LINQ serializes XML DTD declaration with an explicit empty 'internal subset'
         // (a pair of square brackets at the end of Doctype declaration).
         // Even though this is valid XML, XCode does not like it, hence this workaround.
-        internal static string CleanDtdToString(XDocument doc)
+        internal static string CleanDtdToString(XDocument doc, XDocumentType documentType)
         {
             // LINQ does not support changing the DTD of existing XDocument instances,
             // so we create a dummy document for printing of the Doctype declaration.
             // A single dummy element is added to force LINQ not to omit the declaration.
             // Also, utf-8 encoding is forced since this is the encoding we use when writing to file in UpdateInfoPlist.
-            if (doc.DocumentType != null)
+            if (documentType != null)
             {
                 XDocument tmpDoc =
                     new XDocument(new XDeclaration("1.0", "utf-8", null),
-                                  new XDocumentType(doc.DocumentType.Name, doc.DocumentType.PublicId, doc.DocumentType.SystemId, null),
+                                  new XDocumentType(documentType.Name, documentType.PublicId, documentType.SystemId, null),
                                   new XElement(doc.Root.Name));
                 return "" + tmpDoc.Declaration + "\n" + tmpDoc.DocumentType + "\n" + doc.Root;
             }
@@ -318,6 +320,7 @@ namespace UnityEditor.iOS.Xcode.Custom
             root = dict as PlistElementDict;
             if (root == null)
                 throw new Exception("Malformed plist file");
+            documentType = doc.DocumentType;
         }
 
         private static XElement WriteElement(PlistElement el)
@@ -398,7 +401,7 @@ namespace UnityEditor.iOS.Xcode.Custom
 
             var doc = new XDocument();
             doc.Add(rootEl);
-            return CleanDtdToString(doc).Replace("\r\n", "\n");
+            return CleanDtdToString(doc, documentType).Replace("\r\n", "\n");
         }
     }
 
