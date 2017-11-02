@@ -202,12 +202,12 @@ namespace UnityEditor.iOS.Xcode.Custom
                     new XDocument(new XDeclaration("1.0", "utf-8", null),
                                   new XDocumentType(documentType.Name, documentType.PublicId, documentType.SystemId, null),
                                   new XElement(doc.Root.Name));
-                return "" + tmpDoc.Declaration + "\n" + tmpDoc.DocumentType + "\n" + doc.Root;
+                return "" + tmpDoc.Declaration + "\n" + tmpDoc.DocumentType + "\n" + doc.Root + "\n";
             }
             else
             {
                 XDocument tmpDoc = new XDocument(new XDeclaration("1.0", "utf-8", null), new XElement(doc.Root.Name));
-                return "" + tmpDoc.Declaration + Environment.NewLine + doc.Root;
+                return "" + tmpDoc.Declaration + Environment.NewLine + doc.Root + "\n";
             }
         }
 
