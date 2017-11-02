@@ -1,8 +1,13 @@
 using NUnit.Framework;
 using System.Collections.Generic;
 using System.IO;
+#if UNITY_XCODE_API_BUILD
 using UnityEditor.iOS.Xcode;
 using UnityEditor.iOS.Xcode.Extensions;
+#else
+using UnityEditor.iOS.Xcode.Custom;
+using UnityEditor.iOS.Xcode.Custom.Extensions;
+#endif
 
 namespace UnityEditor.iOS.Xcode.Tests
 {
@@ -41,7 +46,11 @@ namespace UnityEditor.iOS.Xcode.Tests
         
         private static void ResetGuidGenerator()
         {
+#if UNITY_XCODE_API_BUILD
             UnityEditor.iOS.Xcode.PBX.PBXGUID.SetGuidGenerator(LinearGuidGenerator.Generate);
+#else
+            UnityEditor.iOS.Xcode.Custom.PBX.PBXGUID.SetGuidGenerator(LinearGuidGenerator.Generate);
+#endif
             LinearGuidGenerator.Reset();
         }
 
@@ -201,11 +210,14 @@ namespace UnityEditor.iOS.Xcode.Tests
             proj.AddFileToBuild(target, proj.AddFolderReference("relative/path2", "Classes/some/path/path2", PBXSourceTree.Source));
             // check whether we correctly add folder references with weird extensions to resources
             proj.AddFileToBuild(target, proj.AddFolderReference("relative/path3.cc", "Classes/some/path/path3.cc", PBXSourceTree.Source));
+            // check whether we correctly add files which are not buildable
+            proj.AddFileToBuild(target, proj.AddFolderReference("relative/lib.dll", "Classes/some/path/lib.dll", PBXSourceTree.Source));
 
             Assert.IsTrue(proj.FindFileGuidByRealPath("relative/path1.cc") == "CCCCCCCC0000000000000001");
             Assert.IsTrue(proj.FindFileGuidByRealPath("/absolute/path/abs1.cc") == "CCCCCCCC0000000000000005");
             Assert.IsTrue(proj.FindFileGuidByProjectPath("Classes/some/path/abs1.cc") == "CCCCCCCC0000000000000005");
             Assert.AreEqual(1, proj.GetGroupChildrenFiles("Classes/some").Count);
+            
             TestOutput(proj, "add_file2.pbxproj");
         }
 
@@ -556,7 +568,7 @@ namespace UnityEditor.iOS.Xcode.Tests
         }
 
         [Test]
-        public void AddTargetWorks()
+        public void AddTargetOutputIsExpected()
         {
             ResetGuidGenerator();
             PBXProject proj = ReadPBXProject();
@@ -585,7 +597,7 @@ namespace UnityEditor.iOS.Xcode.Tests
         }
 
         [Test]
-        public void AddBuildPhasesWorks()
+        public void AddBuildPhasesOutputIsExpected()
         {
             ResetGuidGenerator();
             PBXProject proj = ReadPBXProject();
@@ -598,7 +610,47 @@ namespace UnityEditor.iOS.Xcode.Tests
         }
 
         [Test]
-        public void AddAppExtensionWorks()
+        public void AddBuildPhasesReturnsExistingBuildPhase()
+        {
+            ResetGuidGenerator();
+            PBXProject proj = ReadPBXProject();
+            string target = proj.AddTarget("TestTarget", ".dylib", "test.type");
+
+            Assert.IsNull(proj.GetSourcesBuildPhaseByTarget(target));
+            Assert.AreEqual("CCCCCCCC0000000000000005", proj.AddSourcesBuildPhase(target));
+            Assert.AreEqual("CCCCCCCC0000000000000005", proj.GetSourcesBuildPhaseByTarget(target));
+            Assert.AreEqual("CCCCCCCC0000000000000005", proj.AddSourcesBuildPhase(target));
+
+            Assert.IsNull(proj.GetResourcesBuildPhaseByTarget(target));
+            Assert.AreEqual("CCCCCCCC0000000000000006", proj.AddResourcesBuildPhase(target));
+            Assert.AreEqual("CCCCCCCC0000000000000006", proj.GetResourcesBuildPhaseByTarget(target));
+            Assert.AreEqual("CCCCCCCC0000000000000006", proj.AddResourcesBuildPhase(target));
+
+            Assert.IsNull(proj.GetFrameworksBuildPhaseByTarget(target));
+            Assert.AreEqual("CCCCCCCC0000000000000007", proj.AddFrameworksBuildPhase(target));
+            Assert.AreEqual("CCCCCCCC0000000000000007", proj.GetFrameworksBuildPhaseByTarget(target));
+            Assert.AreEqual("CCCCCCCC0000000000000007", proj.AddFrameworksBuildPhase(target));
+
+            Assert.IsNull(proj.GetCopyFilesBuildPhaseByTarget(target, "Copy files", "", "13"));
+            Assert.AreEqual("CCCCCCCC0000000000000008", proj.AddCopyFilesBuildPhase(target, "Copy files", "", "13"));
+            Assert.AreEqual("CCCCCCCC0000000000000008", proj.GetCopyFilesBuildPhaseByTarget(target, "Copy files", "", "13"));
+            Assert.AreEqual("CCCCCCCC0000000000000008", proj.AddCopyFilesBuildPhase(target, "Copy files", "", "13"));
+
+            // check whether all parameters are actually matched against existing phases
+            Assert.IsNull(proj.GetCopyFilesBuildPhaseByTarget(target, "Copy files2", "", "13"));
+            Assert.IsNull(proj.GetCopyFilesBuildPhaseByTarget(target, "Copy files", "path", "13"));
+            Assert.IsNull(proj.GetCopyFilesBuildPhaseByTarget(target, "Copy files", "", "14"));
+
+            Assert.AreEqual("CCCCCCCC0000000000000009", proj.AddCopyFilesBuildPhase(target, "Copy files2", "", "13"));
+            Assert.AreEqual("CCCCCCCC0000000000000009", proj.GetCopyFilesBuildPhaseByTarget(target, "Copy files2", "", "13"));
+            Assert.AreEqual("CCCCCCCC0000000000000010", proj.AddCopyFilesBuildPhase(target, "Copy files", "path", "13"));
+            Assert.AreEqual("CCCCCCCC0000000000000010", proj.GetCopyFilesBuildPhaseByTarget(target, "Copy files", "path", "13"));
+            Assert.AreEqual("CCCCCCCC0000000000000011", proj.AddCopyFilesBuildPhase(target, "Copy files", "", "14"));
+            Assert.AreEqual("CCCCCCCC0000000000000011", proj.GetCopyFilesBuildPhaseByTarget(target, "Copy files", "", "14"));
+        }
+
+        [Test]
+        public void AddAppExtensionOutputIsExpected()
         {
             ResetGuidGenerator();
             PBXProject proj = ReadPBXProject();
@@ -609,7 +661,7 @@ namespace UnityEditor.iOS.Xcode.Tests
         }
 
         [Test]
-        public void AddWatchExtensionWorks()
+        public void AddWatchExtensionOutputIsExpected()
         {
             ResetGuidGenerator();
             PBXProject proj = ReadPBXProject();
@@ -620,7 +672,7 @@ namespace UnityEditor.iOS.Xcode.Tests
         }
 
         [Test]
-        public void AddWatchAppAndExtensionWorks()
+        public void AddWatchAppAndExtensionOutputIsExpected()
         {
             ResetGuidGenerator();
             PBXProject proj = ReadPBXProject();
@@ -632,28 +684,69 @@ namespace UnityEditor.iOS.Xcode.Tests
         }
 
         [Test]
+        public void AddEmbedFrameworkWorks()
+        {
+            ResetGuidGenerator();
+            PBXProject proj = ReadPBXProject();
+            string target = proj.TargetGuidByName(PBXProject.GetUnityTargetName());
+
+            // first, include a framework as a regular file
+            var fileGuid = proj.AddFile("path/test.framework", "Frameworks/test.framework");
+            Assert.AreEqual("CCCCCCCC0000000000000001", fileGuid);
+
+            proj.AddFileToEmbedFrameworks(target, fileGuid);
+            Assert.IsNotNull(proj.GetCopyFilesBuildPhaseByTarget(target, "Embed Frameworks", "", "10"));
+
+            proj = Reserialize(proj);
+
+            var buildFile = proj.BuildFilesGetForSourceFile(target, fileGuid);
+            Assert.IsNotNull(buildFile);
+            Assert.IsTrue(buildFile.codeSignOnCopy);
+            Assert.IsTrue(buildFile.removeHeadersOnCopy);
+
+            var copyPhaseGuid = proj.GetCopyFilesBuildPhaseByTarget(target, "Embed Frameworks", "", "10");
+            Assert.IsTrue(proj.copyFiles[copyPhaseGuid].files.Contains(buildFile.guid));
+        }
+
+        [Test]
+        public void WhenUnknownSectionExistsAddCopyFilesBuildPhaseWorks()
+        {
+            ResetGuidGenerator();
+            PBXProject proj = ReadPBXProject("base_unknown_section.pbxproj");
+            string target = proj.TargetGuidByName(PBXProject.GetUnityTargetName());
+            
+            Assert.IsNotNull(proj.GetSourcesBuildPhaseByTarget(target));
+            Assert.IsNotNull(proj.GetResourcesBuildPhaseByTarget(target));
+            Assert.IsNotNull(proj.GetFrameworksBuildPhaseByTarget(target));
+            
+            //Adding additional sections when an unknown section is already present in pbxproj should work
+            Assert.IsNull(proj.GetCopyFilesBuildPhaseByTarget(target, "Copy files", "", "13"));
+            Assert.IsNotNull(proj.AddCopyFilesBuildPhase(target, "Copy files", "", "13"));
+        }
+
+        [Test]
         public void StrippedProjectReadingWorks()
         {
             PBXProject proj = ReadPBXProject("base_stripped.pbxproj");
             TestOutput(proj, "stripped1.pbxproj");
         }
-        
+
         [Test]
-        public void UnknownFileTypesWork()
+        public void UnknownFileTypesOutputIsExpected()
         {
             PBXProject proj = ReadPBXProject("base_unknown.pbxproj");
             TestOutput(proj, "unknown1.pbxproj");
         }
-        
+
         [Test]
-        public void InvalidProjectRepairWorks()
+        public void InvalidProjectRepairOutputIsExpected()
         {
             PBXProject proj = ReadPBXProject("base_repair.pbxproj");
             TestOutput(proj, "repair1.pbxproj");
         }
 
         [Test]
-        public void AddCapabilityWorks()
+        public void AddCapabilityOutputIsExpected()
         {
             ResetGuidGenerator();
             PBXProject proj = ReadPBXProject();
@@ -663,7 +756,7 @@ namespace UnityEditor.iOS.Xcode.Tests
         }
 
         [Test]
-        public void AddCapabilityWithEntitlementWorks()
+        public void AddCapabilityWithEntitlementOutputIsExpected()
         {
             ResetGuidGenerator();
             PBXProject proj = ReadPBXProject();
@@ -673,7 +766,7 @@ namespace UnityEditor.iOS.Xcode.Tests
         }
 
         [Test]
-        public void AddMultipleCapabilitiesWorks()
+        public void AddMultipleCapabilitiesOutputIsExpected()
         {
             ResetGuidGenerator();
             PBXProject proj = ReadPBXProject();
@@ -685,7 +778,7 @@ namespace UnityEditor.iOS.Xcode.Tests
         }
 
         [Test]
-        public void AddMultipleCapabilitiesWithEntitlementWorks()
+        public void AddMultipleCapabilitiesWithEntitlementOutputIsExpected()
         {
             ResetGuidGenerator();
             PBXProject proj = ReadPBXProject();
@@ -697,7 +790,7 @@ namespace UnityEditor.iOS.Xcode.Tests
         }
 
         [Test]
-        public void SetTeamIdWorks()
+        public void SetTeamIdOutputIsExpected()
         {
             ResetGuidGenerator();
             PBXProject proj = ReadPBXProject();

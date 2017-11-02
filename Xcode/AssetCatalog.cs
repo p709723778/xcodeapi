@@ -3,7 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
+#if UNITY_XCODE_API_BUILD
 namespace UnityEditor.iOS.Xcode
+#else
+namespace UnityEditor.iOS.Xcode.Custom
+#endif
 {
 	internal class DeviceTypeRequirement
     {
@@ -447,6 +451,33 @@ namespace UnityEditor.iOS.Xcode
                     item.SetString(kv.Key, kv.Value);
             }
         }
+
+        // Returns the filename of the resulting file
+        protected string CopyFileToSet(string path, HashSet<string> existingFilenames, List<string> warnings)
+        {
+            var filename = Path.GetFileName(path);
+            if (!File.Exists(path))
+            {
+                if (warnings != null)
+                    warnings.Add("File not found: " + path);
+            }
+            else
+            {
+                // ensure that we don't create duplicate filenames
+                int index = 1;
+                string filenameBase = Path.GetFileNameWithoutExtension(filename);
+                string extension = Path.GetExtension(filename);
+
+                while (existingFilenames.Contains(filename))
+                {
+                    filename = String.Format("{0}-{1}{2}", filenameBase, index, extension);
+                    index++;
+                }
+                existingFilenames.Add(filename);
+                File.Copy(path, Path.Combine(m_Path, filename));
+            }
+            return filename;
+        }
     }
 
     internal class AssetDataSet : AssetCatalogItemWithVariants
@@ -491,16 +522,11 @@ namespace UnityEditor.iOS.Xcode
 
             var data = doc.root.CreateArray("data");
 
+            var existingFilenames = new HashSet<string>();
+
             foreach (DataSetVariant item in m_Variants)
             {
-                var filename = Path.GetFileName(item.path);
-                if (!File.Exists(item.path))
-                {
-                    if (warnings != null)
-                        warnings.Add("File not found: " + item.path);
-                }
-                else
-                    File.Copy(item.path, Path.Combine(m_Path, filename));
+                var filename = CopyFileToSet(item.path, existingFilenames, warnings);
 
                 var docItem = data.AddDict();
                 docItem.SetString("filename", filename);
@@ -629,16 +655,11 @@ namespace UnityEditor.iOS.Xcode
 
             var images = doc.root.CreateArray("images");
 
+            var existingFilenames = new HashSet<string>();
+
             foreach (ImageSetVariant item in m_Variants)
             {
-                var filename = Path.GetFileName(item.path);
-                if (!File.Exists(item.path))
-                {
-                    if (warnings != null)
-                        warnings.Add("File not found: " + item.path);
-                }
-                else
-                    File.Copy(item.path, Path.Combine(m_Path, filename));
+                var filename = CopyFileToSet(item.path, existingFilenames, warnings);
 
                 var docItem = images.AddDict();
                 docItem.SetString("filename", filename);

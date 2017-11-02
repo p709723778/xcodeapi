@@ -3,9 +3,17 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.IO;
 using System;
+#if UNITY_XCODE_API_BUILD
 using UnityEditor.iOS.Xcode.PBX;
+#else
+using UnityEditor.iOS.Xcode.Custom.PBX;
+#endif
 
+#if UNITY_XCODE_API_BUILD
 namespace UnityEditor.iOS.Xcode
+#else
+namespace UnityEditor.iOS.Xcode.Custom
+#endif
 {
     using PBXBuildFileSection           = KnownSectionBase<PBXBuildFileData>;
     using PBXFileReferenceSection       = KnownSectionBase<PBXFileReferenceData>;
@@ -183,7 +191,11 @@ namespace UnityEditor.iOS.Xcode
             m_GuidToParentGroupMap.Remove(guid);
             groups.RemoveEntry(guid);
         }
-
+        
+        // This function returns a build section that a particular file should be automatically added to.
+        // Returns null for non-buildable file types.
+        // Throws an exception if the file should be added to a section, but that particular section does not exist for given target
+        // Note that for unknown file types we add them to resource build sections
         public FileGUIDListBase BuildSectionAny(PBXNativeTargetData target, string path, bool isFolderRef)
         {
             string ext = Path.GetExtension(path);
@@ -209,8 +221,15 @@ namespace UnityEditor.iOS.Xcode
                         if (copyFiles.HasEntry(guid))
                             return copyFiles[guid];
                     break;
+                case PBXFileType.ShellScript:
+                    foreach (var guid in target.phases)
+                        if (shellScripts.HasEntry(guid))
+                            return shellScripts[guid];
+                    break;
+                case PBXFileType.NotBuildable:
+                    return null;
             }
-            return null;
+            throw new Exception(String.Format("The given path {0} does not refer to a file in a known build section", path));
         }
 
         public FileGUIDListBase BuildSectionAny(string sectionGuid)
@@ -223,7 +242,9 @@ namespace UnityEditor.iOS.Xcode
                 return sources[sectionGuid];
             if (copyFiles.HasEntry(sectionGuid))
                 return copyFiles[sectionGuid];
-            throw new Exception(String.Format("The given GUID {0} does not refer to a known build section", sectionGuid));
+            if (shellScripts.HasEntry(sectionGuid))
+                return shellScripts[sectionGuid];
+            return null;
         }
 
         void RefreshBuildFilesMapForBuildFileGuidList(Dictionary<string, PBXBuildFileData> mapForTarget,

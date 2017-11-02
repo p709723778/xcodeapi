@@ -3,9 +3,17 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.IO;
 using System;
+#if UNITY_XCODE_API_BUILD
 using UnityEditor.iOS.Xcode.PBX;
+#else
+using UnityEditor.iOS.Xcode.Custom.PBX;
+#endif
 
+#if UNITY_XCODE_API_BUILD
 namespace UnityEditor.iOS.Xcode.Extensions
+#else
+namespace UnityEditor.iOS.Xcode.Custom.Extensions
+#endif
 {
     /*  This class implements a number of static methods for performing common tasks
         on xcode projects. 
@@ -291,6 +299,125 @@ namespace UnityEditor.iOS.Xcode.Extensions
             proj.AddFrameworksBuildPhase(newTargetGuid);
 
             return newTargetGuid;
+        }
+
+        /// <summary>
+        /// Adds an external project dependency to the project.
+        /// </summary>
+        /// <param name="path">The path to the external Xcode project (the .xcodeproj file).</param>
+        /// <param name="projectPath">The project path to the new project.</param>
+        /// <param name="sourceTree">The source tree the path is relative to. The [[PBXSourceTree.Group]] tree is not supported.</param>
+        internal static void AddExternalProjectDependency(this PBXProject proj, string path, string projectPath, PBXSourceTree sourceTree)
+        {
+            if (sourceTree == PBXSourceTree.Group)
+                throw new Exception("sourceTree must not be PBXSourceTree.Group");
+            path = PBXPath.FixSlashes(path);
+            projectPath = PBXPath.FixSlashes(projectPath);
+
+            // note: we are duplicating products group for the project reference. Otherwise Xcode crashes.
+            PBXGroupData productGroup = PBXGroupData.CreateRelative("Products");
+            proj.GroupsAddDuplicate(productGroup); // don't use GroupsAdd here
+
+            PBXFileReferenceData fileRef = PBXFileReferenceData.CreateFromFile(path, Path.GetFileName(projectPath),
+                                                                               sourceTree);
+            proj.FileRefsAdd(path, projectPath, null, fileRef);
+            proj.CreateSourceGroup(PBXPath.GetDirectory(projectPath)).children.AddGUID(fileRef.guid);
+
+            proj.project.project.AddReference(productGroup.guid, fileRef.guid);
+        }
+
+        /** This function must be called only after the project the library is in has
+            been added as a dependency via AddExternalProjectDependency. projectPath must be
+            the same as the 'path' parameter passed to the AddExternalProjectDependency.
+            remoteFileGuid must be the guid of the referenced file as specified in
+            PBXFileReference section of the external project
+
+            TODO: what. is remoteInfo entry in PBXContainerItemProxy? Is in referenced project name or
+            referenced library name without extension?
+        */
+        internal static void AddExternalLibraryDependency(this PBXProject proj, string targetGuid, string filename, string remoteFileGuid, string projectPath,
+                                                          string remoteInfo)
+        {
+            PBXNativeTargetData target = proj.nativeTargets[targetGuid];
+            filename = PBXPath.FixSlashes(filename);
+            projectPath = PBXPath.FixSlashes(projectPath);
+
+            // find the products group to put the new library in
+            string projectGuid = proj.FindFileGuidByRealPath(projectPath);
+            if (projectGuid == null)
+                throw new Exception("No such project");
+
+            string productsGroupGuid = null;
+            foreach (var projRef in proj.project.project.projectReferences)
+            {
+                if (projRef.projectRef == projectGuid)
+                {
+                    productsGroupGuid = projRef.group;
+                    break;
+                }
+            }
+
+            if (productsGroupGuid == null)
+                throw new Exception("Malformed project: no project in project references");
+
+            PBXGroupData productGroup = proj.GroupsGet(productsGroupGuid);
+
+            // verify file extension
+            string ext = Path.GetExtension(filename);
+            if (!FileTypeUtils.IsBuildableFile(ext))
+                throw new Exception("Wrong file extension");
+
+            // create ContainerItemProxy object
+            var container = PBXContainerItemProxyData.Create(projectGuid, "2", remoteFileGuid, remoteInfo);
+            proj.containerItems.AddEntry(container);
+
+            // create a reference and build file for the library
+            string typeName = FileTypeUtils.GetTypeName(ext);
+
+            var libRef = PBXReferenceProxyData.Create(filename, typeName, container.guid, "BUILT_PRODUCTS_DIR");
+            proj.references.AddEntry(libRef);
+            PBXBuildFileData libBuildFile = PBXBuildFileData.CreateFromFile(libRef.guid, false, null);
+            proj.BuildFilesAdd(targetGuid, libBuildFile);
+            proj.BuildSectionAny(target, ext, false).files.AddGUID(libBuildFile.guid);
+
+            // add to products folder
+            productGroup.children.AddGUID(libRef.guid);
+        }
+
+        /// <summary>
+        /// Configures file for embed framework section for the given native target.
+        ///
+        /// This function also internally calls <code>proj.AddFileToBuild(targetGuid, fileGuid)</code>
+        /// to ensure that the framework is added to the list of linked frameworks.
+        ///
+        /// If the target has already configured the given file as embedded framework, this function has
+        /// no effect.
+        ///
+        /// A projects containing multiple native targets, a single file or folder reference can be
+        /// configured to be built in all, some or none of the targets. The file or folder reference is
+        /// added to appropriate build section depending on the file extension.
+        /// </summary>
+        /// <param name="proj">A project passed as this argument.</param>
+        /// <param name="targetGuid">The GUID of the target as returned by [[TargetGuidByName()]].</param>
+        /// <param name="fileGuid">The file GUID returned by [[AddFile]] or [[AddFolderReference]].</param>
+        public static void AddFileToEmbedFrameworks(this PBXProject proj, string targetGuid, string fileGuid)
+        {
+            PBXNativeTargetData target = proj.nativeTargets[targetGuid];
+
+            var phaseGuid = proj.AddCopyFilesBuildPhase(targetGuid, "Embed Frameworks", "", "10");
+            var phase = proj.copyFiles[phaseGuid];
+            var frameworkEmbedFileData = proj.FindFrameworkByFileGuid(phase, fileGuid);
+
+            if (frameworkEmbedFileData == null)
+            {
+                frameworkEmbedFileData = PBXBuildFileData.CreateFromFile(fileGuid, false, null);
+                proj.BuildFilesAdd(targetGuid, frameworkEmbedFileData);
+
+                phase.files.AddGUID(frameworkEmbedFileData.guid);
+            }
+
+            frameworkEmbedFileData.codeSignOnCopy = true;
+            frameworkEmbedFileData.removeHeadersOnCopy = true;
         }
     }
 } // namespace UnityEditor.iOS.Xcode

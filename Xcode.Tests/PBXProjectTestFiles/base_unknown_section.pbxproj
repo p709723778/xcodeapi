@@ -8,26 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		08B24F76137BFDFA00FBA309 /* iAd.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 08B24F75137BFDFA00FBA309 /* iAd.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
-		CCCCCCCC0000000000000004 /* path1.cc in Sources */ = {isa = PBXBuildFile; fileRef = CCCCCCCC0000000000000001 /* path1.cc */; };
-		CCCCCCCC0000000000000006 /* abs1.cc in Sources */ = {isa = PBXBuildFile; fileRef = CCCCCCCC0000000000000005 /* abs1.cc */; };
-		CCCCCCCC0000000000000008 /* abs2.cc in Sources */ = {isa = PBXBuildFile; fileRef = CCCCCCCC0000000000000007 /* abs2.cc */; };
-		CCCCCCCC0000000000000010 /* path1.unknown_ext in Resources */ = {isa = PBXBuildFile; fileRef = CCCCCCCC0000000000000009 /* path1.unknown_ext */; };
-		CCCCCCCC0000000000000012 /* path2 in Resources */ = {isa = PBXBuildFile; fileRef = CCCCCCCC0000000000000011 /* path2 */; };
-		CCCCCCCC0000000000000014 /* path3.cc in Resources */ = {isa = PBXBuildFile; fileRef = CCCCCCCC0000000000000013 /* path3.cc */; };
-		CCCCCCCC0000000000000016 /* lib.dll in Resources */ = {isa = PBXBuildFile; fileRef = CCCCCCCC0000000000000015 /* lib.dll */; };
 		D82DCFC30E8000A5005D6AD8 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = D82DCFBB0E8000A5005D6AD8 /* main.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		08B24F75137BFDFA00FBA309 /* iAd.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = iAd.framework; path = System/Library/Frameworks/iAd.framework; sourceTree = SDKROOT; };
 		1D6058910D05DD3D006BFB54 /* Unity-Target-New.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Unity-Target-New.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		CCCCCCCC0000000000000001 /* path1.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = path1.cc; path = relative/path1.cc; sourceTree = SOURCE_ROOT; };
-		CCCCCCCC0000000000000005 /* abs1.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = abs1.cc; path = /absolute/path/abs1.cc; sourceTree = SOURCE_ROOT; };
-		CCCCCCCC0000000000000007 /* abs2.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = abs2.cc; path = /absolute/path/abs2.cc; sourceTree = SOURCE_ROOT; };
-		CCCCCCCC0000000000000009 /* path1.unknown_ext */ = {isa = PBXFileReference; lastKnownFileType = file; name = path1.unknown_ext; path = relative/path1.unknown_ext; sourceTree = SOURCE_ROOT; };
-		CCCCCCCC0000000000000011 /* path2 */ = {isa = PBXFileReference; lastKnownFileType = folder; name = path2; path = relative/path2; sourceTree = SOURCE_ROOT; };
-		CCCCCCCC0000000000000013 /* path3.cc */ = {isa = PBXFileReference; lastKnownFileType = folder; name = path3.cc; path = relative/path3.cc; sourceTree = SOURCE_ROOT; };
-		CCCCCCCC0000000000000015 /* lib.dll */ = {isa = PBXFileReference; lastKnownFileType = folder; name = lib.dll; path = relative/lib.dll; sourceTree = SOURCE_ROOT; };
 		D82DCFBB0E8000A5005D6AD8 /* main.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = main.mm; path = Classes/main.mm; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -41,6 +27,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXUnknownBuildPhase section */
+        1D60588H0D05DD3D006BFB54 /* Frameworks */ = {
+            isa = PBXUnknownBuildPhase;
+            buildActionMask = 2147483647;
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+/* End PBXUnknownBuildPhase section */
 
 /* Begin PBXGroup section */
 		19C28FACFE9D520D11CA2CBB /* Products */ = {
@@ -69,33 +63,10 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		CCCCCCCC0000000000000002 /* some */ = {
-			isa = PBXGroup;
-			children = (
-				CCCCCCCC0000000000000003 /* path */,
-				CCCCCCCC0000000000000007 /* abs2.cc */,
-			);
-			path = some;
-			sourceTree = "<group>";
-		};
-		CCCCCCCC0000000000000003 /* path */ = {
-			isa = PBXGroup;
-			children = (
-				CCCCCCCC0000000000000001 /* path1.cc */,
-				CCCCCCCC0000000000000005 /* abs1.cc */,
-				CCCCCCCC0000000000000009 /* path1.unknown_ext */,
-				CCCCCCCC0000000000000011 /* path2 */,
-				CCCCCCCC0000000000000013 /* path3.cc */,
-				CCCCCCCC0000000000000015 /* lib.dll */,
-			);
-			path = path;
-			sourceTree = "<group>";
-		};
 		D82DCFB50E8000A5005D6AD8 /* Classes */ = {
 			isa = PBXGroup;
 			children = (
 				D82DCFBB0E8000A5005D6AD8 /* main.mm */,
-				CCCCCCCC0000000000000002 /* some */,
 			);
 			path = Classes;
 			sourceTree = SOURCE_ROOT;
@@ -110,6 +81,8 @@
 				1D60588D0D05DD3D006BFB54 /* Resources */,
 				1D60588E0D05DD3D006BFB54 /* Sources */,
 				1D60588F0D05DD3D006BFB54 /* Frameworks */,
+                1D60588H0D05DD3D006BFB54 /* Unkknown */,
+
 			);
 			buildRules = (
 			);
@@ -149,10 +122,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				CCCCCCCC0000000000000010 /* path1.unknown_ext in Resources */,
-				CCCCCCCC0000000000000012 /* path2 in Resources */,
-				CCCCCCCC0000000000000014 /* path3.cc in Resources */,
-				CCCCCCCC0000000000000016 /* lib.dll in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -164,9 +133,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				D82DCFC30E8000A5005D6AD8 /* main.mm in Sources */,
-				CCCCCCCC0000000000000004 /* path1.cc in Sources */,
-				CCCCCCCC0000000000000006 /* abs1.cc in Sources */,
-				CCCCCCCC0000000000000008 /* abs2.cc in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
