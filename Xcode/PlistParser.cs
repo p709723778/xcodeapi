@@ -23,6 +23,8 @@ namespace UnityEditor.iOS.Xcode.Custom
         public bool AsBoolean()  { return ((PlistElementBoolean)this).value; }
         public PlistElementArray AsArray() { return (PlistElementArray)this; }
         public PlistElementDict AsDict()   { return (PlistElementDict)this; }
+        public PlistElementReal AsReal() { return (PlistElementReal)this; }
+        public PlistElementDate AsDate() { return (PlistElementDate)this; }
 
         public PlistElement this[string key]
         {
@@ -98,6 +100,16 @@ namespace UnityEditor.iOS.Xcode.Custom
         public void SetBoolean(string key, bool val)
         {
             values[key] = new PlistElementBoolean(val);
+        }
+
+        public void SetDate(string key, DateTime val)
+        {
+            values[key] = new PlistElementDate(val);
+        }
+
+        public void SetReal(string key, float val)
+        {
+            values[key] = new PlistElementReal(val);
         }
 
         public PlistElementArray CreateArray(string key)
