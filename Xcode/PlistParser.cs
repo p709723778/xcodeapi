@@ -337,6 +337,16 @@ namespace UnityEditor.iOS.Xcode.Custom
                 var realEl = el as PlistElementString;
                 return new XElement("string", realEl.value);
             }
+            if (el is PlistElementReal)
+            {
+                var realEl = el as PlistElementReal;
+                return new XElement("real", realEl.value.ToString());
+            }
+            if (el is PlistElementDate)
+            {
+                var realEl = el as PlistElementDate;
+                return new XElement("date", realEl.value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"));
+            }
             if (el is PlistElementDict)
             {
                 var realEl = el as PlistElementDict;
