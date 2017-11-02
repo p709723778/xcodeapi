@@ -34,6 +34,7 @@
     <Compile Include="TestUtils.cs" />
     <Compile Include="ProjectCapabilityManagerTests.cs" />
     <Compile Include="XcSchemeTests.cs" />
+    <Compile Include="PlistParserTests.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ItemGroup>
