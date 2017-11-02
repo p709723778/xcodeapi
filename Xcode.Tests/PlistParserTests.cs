@@ -20,7 +20,8 @@ namespace UnityEditor.iOS.Xcode.Tests
 <!DOCTYPE plist PUBLIC ""-//Apple//DTD PLIST 1.0//EN"" ""http://www.apple.com/DTDs/PropertyList-1.0.dtd"">
 <plist version=""1.0"">
 {0}
-</plist>";
+</plist>
+";
             return string.Format(template, contents);
         }
 
