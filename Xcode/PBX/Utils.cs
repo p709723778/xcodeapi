@@ -4,7 +4,11 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.IO;
 
+#if UNITY_XCODE_API_BUILD
 namespace UnityEditor.iOS.Xcode.PBX
+#else
+namespace UnityEditor.iOS.Xcode.Custom.PBX
+#endif
 {
     internal class GUIDToCommentMap
     {
@@ -135,7 +139,8 @@ namespace UnityEditor.iOS.Xcode.PBX
         Framework,
         Source,
         Resource,
-        CopyFile
+        CopyFile, 
+        ShellScript
     }
 
     internal class FileTypeUtils
@@ -165,6 +170,7 @@ namespace UnityEditor.iOS.Xcode.PBX
             new Dictionary<string, FileTypeDesc>
         {
             { "a",         new FileTypeDesc("archive.ar",              PBXFileType.Framework) },
+            { "aif",       new FileTypeDesc("sound.aif",               PBXFileType.Resource) },
             { "app",       new FileTypeDesc("wrapper.application",     PBXFileType.NotBuildable, true) },
             { "appex",     new FileTypeDesc("wrapper.app-extension",   PBXFileType.CopyFile) },
             { "bin",       new FileTypeDesc("archive.macbinary",       PBXFileType.Resource) },
@@ -182,6 +188,7 @@ namespace UnityEditor.iOS.Xcode.PBX
             { "inc",       new FileTypeDesc("sourcecode.inc",          PBXFileType.NotBuildable) },
             { "m",         new FileTypeDesc("sourcecode.c.objc",       PBXFileType.Source) },
             { "mm",        new FileTypeDesc("sourcecode.cpp.objcpp",   PBXFileType.Source ) },
+            { "mp3",       new FileTypeDesc("sound.mp3",               PBXFileType.Resource) },
             { "nib",       new FileTypeDesc("wrapper.nib",             PBXFileType.Resource) },
             { "plist",     new FileTypeDesc("text.plist.xml",          PBXFileType.Resource) },
             { "png",       new FileTypeDesc("image.png",               PBXFileType.Resource) },
@@ -195,7 +202,8 @@ namespace UnityEditor.iOS.Xcode.PBX
             { "storyboard",new FileTypeDesc("file.storyboard",         PBXFileType.Resource) },
             { "bundle",    new FileTypeDesc("wrapper.plug-in",         PBXFileType.Resource) },
             { "dylib",     new FileTypeDesc("compiled.mach-o.dylib",   PBXFileType.Framework) },
-            { "tbd",       new FileTypeDesc("sourcecode.text-based-dylib-definition",  PBXFileType.Framework) }
+            { "tbd",       new FileTypeDesc("sourcecode.text-based-dylib-definition",  PBXFileType.Framework) },
+            { "wav",       new FileTypeDesc("sound.wav",               PBXFileType.Resource) }
         };
 
         public static string TrimExtension(string ext)

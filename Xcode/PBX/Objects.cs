@@ -5,8 +5,11 @@ using System.IO;
 using System.Linq;
 using System;
 
-
+#if UNITY_XCODE_API_BUILD
 namespace UnityEditor.iOS.Xcode.PBX
+#else
+namespace UnityEditor.iOS.Xcode.Custom.PBX
+#endif
 {
     internal class PBXObjectData
     {   
@@ -88,6 +91,8 @@ namespace UnityEditor.iOS.Xcode.PBX
         public string fileRef;
         public string compileFlags;
         public bool weak;
+        public bool codeSignOnCopy;
+        public bool removeHeadersOnCopy;
         public List<string> assetTags;
         
         private static PropertyCommentChecker checkerData = new PropertyCommentChecker(new string[]{
@@ -105,10 +110,48 @@ namespace UnityEditor.iOS.Xcode.PBX
             buildFile.fileRef = fileRefGUID;
             buildFile.compileFlags = compileFlags;
             buildFile.weak = weak;
+            buildFile.codeSignOnCopy = false;
+            buildFile.removeHeadersOnCopy = false;
             buildFile.assetTags = new List<string>();
             return buildFile;
         }
-        
+
+        PBXElementDict UpdatePropsAttribute(PBXElementDict settings, bool value, string attributeName)
+        {
+            PBXElementArray attrs = null;
+            if (value)
+            {
+                if (settings == null)
+                    settings = m_Properties.CreateDict("settings");
+            }
+            if (settings != null && settings.Contains("ATTRIBUTES"))
+                attrs = settings["ATTRIBUTES"].AsArray();
+
+            if (value)
+            {
+                if (attrs == null)
+                    attrs = settings.CreateArray("ATTRIBUTES");
+
+                bool exists = attrs.values.Any(attr => 
+                {
+                    return attr is PBXElementString && attr.AsString() == attributeName;
+                });
+
+                if (!exists)
+                    attrs.AddString(attributeName);
+            }
+            else
+            {
+                if (attrs != null)
+                {
+                    attrs.values.RemoveAll(el => (el is PBXElementString && el.AsString() == attributeName));
+                    if (attrs.values.Count == 0)
+                        settings.Remove("ATTRIBUTES");
+                }
+            }
+            return settings;
+        }
+
         public override void UpdateProps()
         {
             SetPropertyString("fileRef", fileRef);
@@ -129,35 +172,9 @@ namespace UnityEditor.iOS.Xcode.PBX
                     settings.Remove("COMPILER_FLAGS");
             }
 
-            if (weak)
-            {
-                if (settings == null)
-                    settings = m_Properties.CreateDict("settings");
-                PBXElementArray attrs = null;
-                if (settings.Contains("ATTRIBUTES"))
-                    attrs = settings["ATTRIBUTES"].AsArray();
-                else
-                    attrs = settings.CreateArray("ATTRIBUTES");
-                    
-                bool exists = false;
-                foreach (var value in attrs.values)
-                {
-                    if (value is PBXElementString && value.AsString() == "Weak")
-                        exists = true;
-                }
-                if (!exists)
-                    attrs.AddString("Weak");
-            }
-            else
-            {
-                if (settings != null && settings.Contains("ATTRIBUTES"))
-                {
-                    var attrs = settings["ATTRIBUTES"].AsArray();
-                    attrs.values.RemoveAll(el => (el is PBXElementString && el.AsString() == "Weak"));
-                    if (attrs.values.Count == 0)
-                        settings.Remove("ATTRIBUTES");
-                }
-            }
+            settings = UpdatePropsAttribute(settings, weak, "Weak");
+            settings = UpdatePropsAttribute(settings, codeSignOnCopy, "CodeSignOnCopy");
+            settings = UpdatePropsAttribute(settings, removeHeadersOnCopy, "RemoveHeadersOnCopy");
             
             if (assetTags.Count > 0)
             {
@@ -196,6 +213,10 @@ namespace UnityEditor.iOS.Xcode.PBX
                     {
                         if (value is PBXElementString && value.AsString() == "Weak")
                             weak = true;
+                        if (value is PBXElementString && value.AsString() == "CodeSignOnCopy")
+                            codeSignOnCopy = true;
+                        if (value is PBXElementString && value.AsString() == "RemoveHeadersOnCopy")
+                            removeHeadersOnCopy = true;
                     }
                 }
                 if (dict.Contains("ASSET_TAGS"))
@@ -541,6 +562,8 @@ namespace UnityEditor.iOS.Xcode.PBX
         internal override PropertyCommentChecker checker { get { return checkerData; } }
 
         public string name;
+        public string dstPath;
+        public string dstSubfolderSpec;
 
         // name may be null
         public static PBXCopyFilesBuildPhaseData Create(string name, string dstPath, string subfolderSpec)
@@ -549,8 +572,8 @@ namespace UnityEditor.iOS.Xcode.PBX
             res.guid = PBXGUID.Generate();
             res.SetPropertyString("isa", "PBXCopyFilesBuildPhase");
             res.SetPropertyString("buildActionMask", "2147483647");
-            res.SetPropertyString("dstPath", dstPath);
-            res.SetPropertyString("dstSubfolderSpec", subfolderSpec);
+            res.dstPath = dstPath;
+            res.dstSubfolderSpec = subfolderSpec;
             res.files = new List<string>();
             res.SetPropertyString("runOnlyForDeploymentPostprocessing", "0");
             res.name = name;
@@ -561,11 +584,16 @@ namespace UnityEditor.iOS.Xcode.PBX
         {
             SetPropertyList("files", files);
             SetPropertyString("name", name);
+            SetPropertyString("dstPath", dstPath);
+            SetPropertyString("dstSubfolderSpec", dstSubfolderSpec);
         }
+
         public override void UpdateVars()
         {
             files = GetPropertyList("files");
             name = GetPropertyString("name");
+            dstPath = GetPropertyString("dstPath");
+            dstSubfolderSpec = GetPropertyString("dstSubfolderSpec");
         }
     }
 
