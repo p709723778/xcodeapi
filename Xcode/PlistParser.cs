@@ -273,7 +273,7 @@ namespace UnityEditor.iOS.Xcode.Custom
                 {
                     DateTime date;
                     if (DateTime.TryParse(GetText(xml), out date))
-                        return new PlistElementDate(date);
+                        return new PlistElementDate(date.ToUniversalTime());
                     return null;
                 }
                 case "true":
